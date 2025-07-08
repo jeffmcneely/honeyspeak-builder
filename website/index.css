@@ -1,0 +1,7 @@
+#image {
+  max-width: 20%;
+  height: auto;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  margin: 10px 0;
+}
