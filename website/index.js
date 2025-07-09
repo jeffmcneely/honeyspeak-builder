@@ -1,5 +1,6 @@
 function bodyLoader() {
   loadImagesFromLambda('https://2gu6x603q8.execute-api.us-west-2.amazonaws.com/default/esl-random-EslLambdaFunction-7o9597CkuS2e');
+  document.getElementById('spinner_parent').style.display = 'none';
 }
 
 async function loadImagesFromLambda(apiUrl) {
