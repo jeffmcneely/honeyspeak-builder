@@ -1,32 +1,57 @@
 import json
 import boto3
 import random
-from libs.helper import s3_presigned_url, get_aws_secret, get_random_item_from_dynamo, s3_file_exists
+from libs.helper import (
+    s3_presigned_url,
+    get_aws_secret,
+    get_random_item_from_dynamo,
+    s3_file_exists,
+)
+
 
 def lambda_handler(event, context):
-    session = boto3.session.Session( region_name="us-west-2")
+    session = boto3.session.Session(region_name="us-west-2")
     secret = get_aws_secret(session, "prod/esl/reader", "us-west-2")
     entry = get_random_item_from_dynamo(session, "esl")
 
-    
     word = entry.get("word", "")
-    shortdef = entry.get("shortdef", "")
+    shortdefs = entry.get("shortdef", [])
+    shortdef = ""
+    for sd in shortdefs:
+        shortdef = sd + ". "
     url = []
+    if s3_file_exists(session, secret["bucket"], f"audio/Joanna_{word}.mp3"):
+        joanna = s3_presigned_url(session, secret["bucket"], f"audio/Joanna_{word}.mp3")
+
+    if s3_file_exists(session, secret["bucket"], f"audio/Matthew_{word}.mp3"):
+        matthew = s3_presigned_url(
+            session, secret["bucket"], f"audio/Matthew_{word}.mp3"
+        )
+
     for i in range(3):
         if s3_file_exists(session, secret["bucket"], f"images/{word}_{i}.jpg"):
-            url.append(s3_presigned_url(session, secret["bucket"], f"images/{word}_{i}.jpg")    )
+            url.append(
+                s3_presigned_url(session, secret["bucket"], f"images/{word}_{i}.jpg")
+            )
             print(f"found {word}_{i}.jpg in S3")
     return {
-        'statusCode': 200,
-'headers': {
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Allow-Origin': secret['website'],
-            'Access-Control-Allow-Methods': 'GET'
+        "statusCode": 200,
+        "headers": {
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Origin": secret["website"],
+            "Access-Control-Allow-Methods": "GET",
         },
-        'body': json.dumps({"images": url, "shortdef": shortdef, "word": word, "audio": build_link(entry)}),
+        "body": json.dumps(
+            {
+                "images": url,
+                "shortdef": shortdef,
+                "word": word,
+                "female_audio": joanna,
+                "male_audio": matthew,
+                "audio": build_link(entry),
+            }
+        ),
     }
-
-
 
 
 def build_link(entry: dict) -> str:

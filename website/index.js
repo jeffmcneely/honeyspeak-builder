@@ -35,6 +35,28 @@ async function loadImagesFromLambda(apiUrl) {
       audioContainer.appendChild(audio);
     }
 
+    const femaleAudioUrl = data.female_audio || "";
+    if (femaleAudioUrl !== "") {
+      const div = document.createElement('div');
+      div.innerText = "Female Voice:";
+      audioContainer.appendChild(div);
+      const femaleAudio = document.createElement('audio');
+      femaleAudio.src = femaleAudioUrl;
+      femaleAudio.controls = true; // shows play/pause controls
+      audioContainer.appendChild(femaleAudio);
+    }
+
+    const maleAudioUrl = data.male_audio || "";
+    if (maleAudioUrl !== "") {
+      const div = document.createElement('div');
+      div.innerText = "Male Voice:";
+      audioContainer.appendChild(div);
+      const maleAudio = document.createElement('audio');
+      maleAudio.src = maleAudioUrl;
+      maleAudio.controls = true; // shows play/pause controls
+      audioContainer.appendChild(maleAudio);
+    }
+
     const wordContainer = document.getElementById('word-container');
     wordContainer.replaceChildren(); // Clear previous content
     const h2 = document.createElement('h2');
