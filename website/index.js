@@ -29,6 +29,9 @@ async function loadImagesFromLambda(apiUrl) {
     const audioContainer = document.getElementById('audio-container');
     audioContainer.replaceChildren(); // Clear previous audio
     if (audioUrl !== "") {
+      const div = document.createElement('div');
+      div.innerText = "Pronunciation:";
+      audioContainer.appendChild(div);
       const audio = document.createElement('audio');
       audio.src = audioUrl;
       audio.controls = true; // shows play/pause controls
