@@ -1,5 +1,5 @@
 function bodyLoader() {
-  loadImagesFromLambda('https://2gu6x603q8.execute-api.us-west-2.amazonaws.com/default/esl-random-EslLambdaFunction-7o9597CkuS2e')
+  loadImagesFromLambda('https://2gu6x603q8.execute-api.us-west-2.amazonaws.com/default/esl-random-EslLambdaFunction-7o9597CkuS2e');
 }
 
 async function loadImagesFromLambda(apiUrl) {
@@ -41,6 +41,8 @@ async function loadImagesFromLambda(apiUrl) {
     h2.textContent = word;
     wordContainer.appendChild(h2);
     wordContainer.appendChild(document.createTextNode(shortdef));
+    document.getElementById('spinner_parent').style.display = 'none';
+
   } catch (err) {
     console.error('Error loading images:', err);
   }
