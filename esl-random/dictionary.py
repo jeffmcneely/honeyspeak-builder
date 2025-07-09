@@ -58,10 +58,11 @@ def main():
                         store_data = data[0]
                     else:
                         store_data = data
-                    store_data['word'] = word
+                    store_data["word"] = word
                     put_item_in_dynamo(session, "esl", store_data)
 
                 progress.remove_task(task2)
+
 
 if __name__ == "__main__":
     main()

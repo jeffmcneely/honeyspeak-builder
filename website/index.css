@@ -5,3 +5,12 @@
   border-radius: 8px;
   margin: 10px 0;
 }
+.merriam-webster-logo {
+  height: 50px;
+  width: 50px;
+}
+.merriam-webster-logo::after {
+  content: url('mw_logo.png');
+  display: inline-block;
+  vertical-align: middle;
+}
