@@ -12,10 +12,10 @@ async function loadImagesFromLambda(apiUrl) {
     const images = data.images || [];
     const word = data.word
     const shortdef = data.shortdef;
-    const container = document.getElementById('image-container');
+    const imageContainer = document.getElementById('image-container');
 
     // Clear previous images
-    container.replaceChildren()
+    imageContainer.replaceChildren()
 
     // Insert up to 3 images
     images.slice(0, 3).forEach(url => {
@@ -23,8 +23,22 @@ async function loadImagesFromLambda(apiUrl) {
       img.src = url;
       img.alt = word;
       img.className = 'image';
-      container.appendChild(img);
+      imageContainer.appendChild(img);
     });
+    const audioUrl = data.audio || "";
+    const audioContainer = document.getElementById('audio-container');
+    audioContainer.replaceChildren(); // Clear previous audio
+    const audio = document.createElement('audio');
+    audio.src = audioUrl;
+    audio.controls = true; // shows play/pause controls
+    audioContainer.appendChild(audio);
+
+    const wordContainer = document.getElementById('word-container');
+    wordContainer.replaceChildren(); // Clear previous content
+    const h2 = document.createElement('h2');
+    h2.textContent = word;
+    wordContainer.appendChild(h2);
+    wordContainer.appendChild(document.createTextNode(shortdef));
   } catch (err) {
     console.error('Error loading images:', err);
   }
