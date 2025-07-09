@@ -28,10 +28,12 @@ async function loadImagesFromLambda(apiUrl) {
     const audioUrl = data.audio || "";
     const audioContainer = document.getElementById('audio-container');
     audioContainer.replaceChildren(); // Clear previous audio
-    const audio = document.createElement('audio');
-    audio.src = audioUrl;
-    audio.controls = true; // shows play/pause controls
-    audioContainer.appendChild(audio);
+    if (audioUrl !== "") {
+      const audio = document.createElement('audio');
+      audio.src = audioUrl;
+      audio.controls = true; // shows play/pause controls
+      audioContainer.appendChild(audio);
+    }
 
     const wordContainer = document.getElementById('word-container');
     wordContainer.replaceChildren(); // Clear previous content

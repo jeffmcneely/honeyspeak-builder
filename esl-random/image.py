@@ -6,7 +6,7 @@ from libs.helper import (
     get_aws_secret,
     upload_file_to_s3,
     get_api_usage,
-    update_api_usage,
+    update_api_usage, s3_file_exists
 )
 from rich.progress import Progress
 
@@ -47,8 +47,10 @@ def main():
     with Progress() as progress:
         task1 = progress.add_task("[red]word list", total=len(wordlist))
         for word in wordlist:
-            task2 = progress.add_task(f"[yellow]{word} generation", total=image_count)
+            task2 = progress.add_task(f"[green]generating {word}", total=image_count)
             for i in range(image_count):
+                if s3_file_exists(session, secret["bucket"], f"images/{word}_{i}.jpg"):
+                    continue
                 if generate_image(word, secret["deepai_key"], i):
                     new_usage_count += 1
                     upload_file_to_s3(
@@ -62,6 +64,8 @@ def main():
                         session, secret["bucket"], "image", new_usage_count
                     )
                 progress.update(task2, advance=1)
+#            task2.visible = False
+            progress.remove_task(task2)
             progress.update(task1, advance=1)
 
 
