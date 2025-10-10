@@ -50,7 +50,7 @@ class CoreDataDictionary:
             
             # Enable Core Data compatible settings
             cursor = self.connection.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA journal_mode=DELETE")
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA cache_size=10000")
             cursor.execute("PRAGMA temp_store=MEMORY")
@@ -135,7 +135,8 @@ class CoreDataDictionary:
                     Z_OPT INTEGER,
                     ZCREATEDAT TIMESTAMP,
                     ZUPDATEDAT TIMESTAMP,
-                    ZWORD TEXT UNIQUE NOT NULL,
+                    ZWORD TEXT NOT NULL,
+                    ZUUID TEXT,
                     ZRAWDATA TEXT
                 )
             ''')
@@ -271,12 +272,13 @@ class CoreDataDictionary:
             # Get or create word record
             word_pk = self._get_next_primary_key(1)  # CDWord entity
             now = datetime.now()
-            
+            print(f"Inserting word data: {word}")
+            print(json.dumps(api_data))
             cursor.execute('''
                 INSERT OR REPLACE INTO ZCDWORD 
-                (Z_PK, Z_ENT, Z_OPT, ZWORD, ZRAWDATA, ZCREATEDAT, ZUPDATEDAT)
+                (Z_PK, Z_ENT, Z_OPT, ZWORD, ZRAWDATA, ZCREATEDAT, ZUPDATEDAT, ZUUID)
                 VALUES (?, 1, 1, ?, ?, ?, ?)
-            ''', (word_pk, word, json.dumps(api_data), now, now))
+            ''', (word_pk, word, json.dumps(api_data), now, now, json.dumps(api_data)[0]['meta']['uuid']))
             
             # Clear existing definitions
             cursor.execute('DELETE FROM ZCDDEFINITION WHERE ZWORD = ?', (word_pk,))

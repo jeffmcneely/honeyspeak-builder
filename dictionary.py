@@ -154,9 +154,9 @@ def main():
                     
                     # Filter data items that match our word
                     for data_item in data:
-                        if isinstance(data_item, dict) and "meta" in data_item:
-                            if data_item["meta"].get("id", "").split(":")[0] == word:
-                                store_data.append(data_item)
+#                        if isinstance(data_item, dict) and "meta" in data_item:
+#                            if data_item["meta"].get("id", "").split(":")[0] == word:
+                        store_data.append(data_item)
                     
                     if not store_data:
                         print(f"⚠️  No valid data found for '{word}': {data}")
@@ -214,11 +214,6 @@ def main():
             print(f"   📝 {random_word['word']} ({random_word['functional_label']})")
             print(f"   🔊 {random_word['pronunciation']}")
             print(f"   📖 {random_word['short_definition']}")
-    
-    print(f"\n💡 Next Steps:")
-    print(f"   • Use 'python migrate_to_coredata.py --export {db_path} MyApp' to export for Xcode")
-    print(f"   • Import the .xcdatamodeld file into your iOS/macOS project")
-    print(f"   • Use the generated Swift classes in your app")
     
     # Close database connection
     db.close()
