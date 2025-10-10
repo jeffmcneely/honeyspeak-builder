@@ -1,6 +1,7 @@
 import json
 import boto3
-import random
+import os
+import logging
 from libs.helper import (
     s3_presigned_url,
     get_aws_secret,
@@ -9,36 +10,54 @@ from libs.helper import (
 )
 
 
-def lambda_handler(event, context):
-    session = boto3.session.Session(region_name="us-west-2")
-    secret = get_aws_secret(session, "prod/esl/reader", "us-west-2")
-    entry = get_random_item_from_dynamo(session, "esl")
 
+
+def lambda_handler(event, context):
+    bucket = os.environ.get("AWS_BUCKET", "")
+    website = os.environ.get("AWS_WEBSITE", "https://esl.mcneely.io")
+    loglevel = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=loglevel)
+    logging.debug(f"Received event: {event}")
+    logging.debug(f"Received queryStringParameters: {event['queryStringParameters']}")
+    logging.debug(f"Building session")
+    session = boto3.session.Session(region_name="us-west-2")
+    logging.debug(f"Creating S3 client")
+    s3 = session.client("s3")
+    logging.debug(f"S3 client created")
+
+    logging.debug(f"Creating DynamoDB client")
+    dynamo = session.client("dynamodb")
+    logging.debug(f"DynamoDB client created")
+
+    entry = get_random_item_from_dynamo(dynamo, "esl")
     word = entry.get("word", "")
+    logging.debug(f"Got random item from DynamoDB: {word}")
     shortdefs = entry.get("shortdef", [])
     shortdef = ""
     for sd in shortdefs:
         shortdef = sd + ". "
     url = []
-    if s3_file_exists(session, secret["bucket"], f"audio/Joanna_{word}.mp3"):
-        joanna = s3_presigned_url(session, secret["bucket"], f"audio/Joanna_{word}.mp3")
-
-    if s3_file_exists(session, secret["bucket"], f"audio/Matthew_{word}.mp3"):
-        matthew = s3_presigned_url(
-            session, secret["bucket"], f"audio/Matthew_{word}.mp3"
-        )
+    if s3_file_exists(s3, bucket, f"audio/Joanna_{word}.mp3"):
+        joanna = s3_presigned_url(s3, bucket, f"audio/Joanna_{word}.mp3")
+        logging.debug(f"Found audio for Joanna")
+    else:
+        joanna = ""
+    if s3_file_exists(s3, bucket, f"audio/Matthew_{word}.mp3"):
+        matthew = s3_presigned_url(s3, bucket, f"audio/Matthew_{word}.mp3")
+        logging.debug(f"Found audio for Matthew")
+    else:
+        matthew = ""
 
     for i in range(3):
-        if s3_file_exists(session, secret["bucket"], f"images/{word}_{i}.jpg"):
-            url.append(
-                s3_presigned_url(session, secret["bucket"], f"images/{word}_{i}.jpg")
-            )
-            print(f"found {word}_{i}.jpg in S3")
+        if s3_file_exists(s3, bucket, f"images/{word}_{i}.jpg"):
+            logging.debug(f"found {word}_{i}.jpg in S3")
+            url.append(s3_presigned_url(s3, bucket, f"images/{word}_{i}.jpg"))
+            logging.debug(f"Added URL for {word}_{i}.jpg")
     return {
         "statusCode": 200,
         "headers": {
             "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Allow-Origin": secret["website"],
+            "Access-Control-Allow-Origin": website,
             "Access-Control-Allow-Methods": "GET",
         },
         "body": json.dumps(
