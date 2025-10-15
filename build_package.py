@@ -120,7 +120,7 @@ def encode_image(file: str) -> str:
 
 def store_file(filename: str) -> str:
     package_id = 0
-    path_re = "low_(?:image|word|shortdef|)_(\w)"
+    path_re = "low_(?:image|word|shortdef|)_([a-z0-9])"
     match = re.search(path_re, filename)
     if match:
         first_letter = match.group(1)  # get the character after 'low_'
@@ -226,7 +226,7 @@ def main():
 
     db.close()
     if not args.dryrun:
-        if args.verbosity == 2:
+        if args.verbosity >= 1:
             print(f"Copying Dictionary.sqlite to {os.getenv('IOS_PATH')}/db.sqlite")
         try:
             shutil.copyfile(
@@ -236,7 +236,7 @@ def main():
             print(
                 f"Error copying Dictionary.sqlite: {e} to {os.getenv('IOS_PATH')}/db.sqlite"
             )
-        if args.verbosity == 2:
+        if args.verbosity >= 1:
             print(f"Copying assets/packages*.zip to {os.getenv('IOS_PATH')}")
             # Copy all package_*.zip files to IOS_PATH
             try:
