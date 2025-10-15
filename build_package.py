@@ -23,27 +23,51 @@ def encode_audio(file: str, bitrate) -> str:
 
     raw_path = os.path.join(OUTDIR, f"{file}")
     low_path = os.path.join(OUTDIR, f"low_{file}")
-
-    # after you write raw_path
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            raw_path,
-            "-ac",
-            "1",  # mono
-            "-b:a",
-            f"{bitrate}k",  # target bitrate
-            "-ar",
-            "24000",  # optional: resample
-            low_path,
-            "-loglevel",
-            "quiet",
-        ],
-        check=True,
-    )
-    return low_path
+    if not os.path.exists(raw_path):
+        return None
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                raw_path,
+                "-ac",
+                "1",  # mono
+                "-b:a",
+                f"{bitrate}k",  # target bitrate
+                "-ar",
+                "24000",  # optional: resample
+                low_path,
+                "-loglevel",
+                "quiet",
+            ],
+            check=True,
+        )
+        return low_path
+    except subprocess.CalledProcessError as e:
+        print(f"Error running ffmpeg: {e}")
+        print(
+            "Command:",
+            " ".join(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    raw_path,
+                    "-ac",
+                    "1",
+                    "-b:a",
+                    f"{bitrate}k",
+                    "-ar",
+                    "24000",
+                    low_path,
+                    "-loglevel",
+                    "quiet",
+                ]
+            ),
+        )
+        raise
 
 
 def encode_image(file: str) -> str:
@@ -51,25 +75,49 @@ def encode_image(file: str) -> str:
     raw_path = os.path.join(OUTDIR, f"{file}")
     low_path = os.path.join(OUTDIR, f"low_{file}")
 
-    subprocess.run(
-        [
-            "magick",
-            raw_path,
-            "-resize",
-            "50%",
-            "-quality",
-            "25",
-            low_path,
-        ],
-        check=True,
-    )
-    return low_path
+    if not os.path.exists(raw_path):
+        return None
+
+    try:
+        subprocess.run(
+            [
+                "magick",
+                raw_path,
+                "-resize",
+                "50%",
+                "-quality",
+                "25",
+                low_path,
+            ],
+            check=True,
+        )
+        return low_path
+    except subprocess.CalledProcessError as e:
+        print(f"Error running ImageMagick: {e}")
+        print(
+            "Command:",
+            " ".join(
+                [
+                    "magick",
+                    raw_path,
+                    "-resize",
+                    "50%",
+                    "-quality",
+                    "25",
+                    low_path,
+                ]
+            ),
+        )
+        raise
 
 
-def store_file(filename: str) -> int:
+def store_file(filename: str) -> str:
     package_id = 0
+    first_letter = os.path.basename(filename)[0]
+    if not path.exists(filename):
+        return None
     while True:
-        package_file = path.join("assets", "package_" + str(package_id) + ".zip")
+        package_file = path.join("assets", f"package_{first_letter}{package_id}.zip")
         if path.exists(package_file) and path.getsize(package_file) > MAX_FILE_SIZE:
             package_id += 1
             continue
@@ -129,8 +177,10 @@ def main():
             print(f"Processing word: {word.word}")
         filename = encode_audio(f"word_{word.uuid}_0.aac", 32)
         if not args.dryrun:
-            package_id = store_file(filename)
-            db.add_asset(word.uuid, "word", 0, package_id, f"low_{filename}")
+            if filename is not None:
+                package_id = store_file(filename)
+                if package_id is not None:
+                    db.add_asset(word.uuid, "word", 0, package_id, f"low_{filename}")
         if args.verbosity == 2:
             print(
                 f"add_asset uuid:{word.uuid} assetgroup: word sid: 0 package_id: {package_id} filename: low_{filename}"
@@ -139,7 +189,10 @@ def main():
             filename = encode_audio(f"shortdef_{word.uuid}_{definition.id}.aac", 32)
             if not args.dryrun:
                 package_id = store_file(filename)
-                db.add_asset(word.uuid, "shortdef", definition.id, package_id, filename)
+                if package_id is not None:
+                    db.add_asset(
+                        word.uuid, "shortdef", definition.id, package_id, filename
+                    )
             if args.verbosity == 2:
                 print(
                     f"add_asset uuid:{word.uuid} assetgroup: shortdef sid: {definition.id} package_id: {package_id} filename: {filename}"
@@ -147,8 +200,11 @@ def main():
 
             filename = encode_image(f"image_{word.uuid}_{definition.id}.png")
             if not args.dryrun:
-                package_id = store_file(filename)
-                db.add_asset(word.uuid, "image", definition.id, package_id, filename)
+                if filename is not None:
+                    package_id = store_file(filename)
+                    db.add_asset(
+                        word.uuid, "image", definition.id, package_id, filename
+                    )
             if args.verbosity == 2:
                 print(
                     f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id} package_id: {package_id} filename: {filename}"

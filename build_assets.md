@@ -162,6 +162,15 @@ If you hit OpenAI API rate limits, tasks will fail. Consider:
 - Adding retry logic (tasks will retry automatically on transient errors)
 - Spreading jobs over time
 
+### 400 Bad Request Errors
+When OpenAI returns a 400 status code (Bad Request), the error details are automatically logged to `errors.txt` in the project directory. Each log entry includes:
+- Timestamp
+- Context (audio/image generation)
+- Error message from the API response
+- The input text/prompt that caused the error
+
+Check `errors.txt` to identify problematic inputs and refine your data.
+
 ## Notes
 
 - All asset generation logic (audio/image) is handled by Celery tasks.
@@ -169,6 +178,8 @@ If you hit OpenAI API rate limits, tasks will fail. Consider:
 - You can still run asset generation synchronously for debugging by omitting `--enqueue`.
 - Workers load environment variables from `.env` automatically.
 - Existing files are skipped to avoid re-generating assets.
+- **Error Logging**: All 400 Bad Request errors from OpenAI are logged to `errors.txt` with detailed information including the error message and input text that caused the failure.
+- **Retry Logic**: The script uses exponential backoff (up to 60 seconds) for transient API errors like rate limits and timeouts.
 
 ## References
 - [Celery Documentation](https://docs.celeryq.dev/en/stable/)
