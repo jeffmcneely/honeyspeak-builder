@@ -7,6 +7,7 @@ from rich.progress import track
 from dotenv import load_dotenv
 from zipfile import ZipFile
 from os import path
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +26,9 @@ def encode_audio(file: str, bitrate) -> str:
     low_path = os.path.join(OUTDIR, f"low_{file}")
     if not os.path.exists(raw_path):
         return None
+    if os.path.exists(low_path):
+        return low_path
+
     try:
         subprocess.run(
             [
@@ -73,11 +77,14 @@ def encode_audio(file: str, bitrate) -> str:
 def encode_image(file: str) -> str:
     """Reduce image resolution by half using ImageMagick"""
     raw_path = os.path.join(OUTDIR, f"{file}")
-    low_path = os.path.join(OUTDIR, f"low_{file}")
+    base_name = os.path.splitext(file)[0]
+    low_path = f"low_{base_name}.heif"
 
     if not os.path.exists(raw_path):
         return None
 
+    if os.path.exists(low_path):
+        return low_path
     try:
         subprocess.run(
             [
@@ -113,7 +120,12 @@ def encode_image(file: str) -> str:
 
 def store_file(filename: str) -> str:
     package_id = 0
-    first_letter = os.path.basename(filename)[0]
+    path_re = "low_(?:image|word|shortdef|)_(\w)"
+    match = re.search(path_re, filename)
+    if match:
+        first_letter = match.group(1)  # get the character after 'low_'
+    else:
+        first_letter = os.path.basename(filename)[0]
     if not path.exists(filename):
         return None
     while True:
@@ -126,7 +138,8 @@ def store_file(filename: str) -> str:
                 print(f"{filename} already exists in zip")
                 break
             package.write(filename)
-            return package_id
+            print(f"stored {filename} into package_{first_letter}{package_id}.zip")
+            return f"{first_letter}{package_id}"
 
 
 def clean_packages() -> None:
@@ -188,11 +201,12 @@ def main():
         for definition in definitions:
             filename = encode_audio(f"shortdef_{word.uuid}_{definition.id}.aac", 32)
             if not args.dryrun:
-                package_id = store_file(filename)
-                if package_id is not None:
-                    db.add_asset(
-                        word.uuid, "shortdef", definition.id, package_id, filename
-                    )
+                if filename is not None:
+                    package_id = store_file(filename)
+                    if package_id is not None:
+                        db.add_asset(
+                            word.uuid, "shortdef", definition.id, package_id, filename
+                        )
             if args.verbosity == 2:
                 print(
                     f"add_asset uuid:{word.uuid} assetgroup: shortdef sid: {definition.id} package_id: {package_id} filename: {filename}"
@@ -214,12 +228,28 @@ def main():
     if not args.dryrun:
         if args.verbosity == 2:
             print(f"Copying Dictionary.sqlite to {os.getenv('IOS_PATH')}/db.sqlite")
-        shutil.copyfile(
-            "Dictionary.sqlite", os.path.join(os.getenv("IOS_PATH"), "db.sqlite")
-        )
+        try:
+            shutil.copyfile(
+                "Dictionary.sqlite", os.path.join(os.getenv("IOS_PATH"), "db.sqlite")
+            )
+        except Exception as e:
+            print(
+                f"Error copying Dictionary.sqlite: {e} to {os.getenv('IOS_PATH')}/db.sqlite"
+            )
         if args.verbosity == 2:
-            print(f"Copying assets/package_0.zip to {os.getenv('IOS_PATH')}")
-        shutil.copy("assets/package_0.zip", os.getenv("IOS_PATH"))
+            print(f"Copying assets/packages*.zip to {os.getenv('IOS_PATH')}")
+            # Copy all package_*.zip files to IOS_PATH
+            try:
+                for filename in os.listdir("assets"):
+                    if filename.startswith("package_") and filename.endswith(".zip"):
+                        shutil.copy(
+                            os.path.join("assets", filename),
+                            os.path.join(os.getenv("IOS_PATH"), filename),
+                        )
+            except Exception as e:
+                print(
+                    f"Error copying package zip files: {e} to {os.getpid('IOS_PATH')}"
+                )
     if args.verbosity >= 1:
         print("Packaging complete!")
 
