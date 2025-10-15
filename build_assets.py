@@ -4,11 +4,37 @@ import os
 from pathlib import Path
 import base64
 from openai import OpenAI
-from openai._exceptions import OpenAIError
+from openai._exceptions import OpenAIError, APIError, RateLimitError, APITimeoutError
 from libs.sqlite_dictionary import SQLiteDictionary
 from rich.progress import Progress, track
 from dotenv import load_dotenv
 import re
+from celery import Celery
+from tenacity import (
+    retry,
+    stop_after_delay,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+import logging
+
+# Configure logging for tenacity
+logger = logging.getLogger(__name__)
+
+# Celery configuration
+app = Celery(
+    "build_assets",
+    broker="redis://localhost:6379/0",
+    backend="redis://localhost:6379/0",
+)
+app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+)
 
 
 # Models supported by audio/speech endpoint
@@ -41,76 +67,140 @@ def strip_tags(text: str) -> str:
     return re.sub(r"\{.*?\}", "", text)
 
 
-def generate_audio(client: OpenAI, text: str, fname: str, args: Namespace) -> None:
+@retry(
+    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_delay(60),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _call_openai_audio_streaming(
+    client: OpenAI, audio_model: str, audio_voice: str, text: str, fname: str
+) -> None:
     """
-    Generate audio using audio.speech. Tries streaming first, falls back to non-streaming if unavailable.
+    Call OpenAI audio API with streaming response and retry logic.
+    Raises exception if all retries fail.
     """
+    with client.audio.speech.with_streaming_response.create(
+        model=audio_model,
+        voice=audio_voice,
+        input=text,
+        response_format=audio_format,
+    ) as resp:
+        resp.stream_to_file(str(fname))
+
+
+@retry(
+    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_delay(60),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _call_openai_audio_non_streaming(
+    client: OpenAI, audio_model: str, audio_voice: str, text: str
+) -> bytes:
+    """
+    Call OpenAI audio API without streaming and retry logic.
+    Returns audio bytes. Raises exception if all retries fail.
+    """
+    resp = client.audio.speech.create(
+        model=audio_model,
+        voice=audio_voice,
+        input=text,
+        response_format=audio_format,
+    )
+    return resp.read() if hasattr(resp, "read") else resp.content
+
+
+@retry(
+    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_delay(60),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _call_openai_image(client: OpenAI, image_model: str, prompt: str, size: str):
+    """
+    Call OpenAI images API with retry logic.
+    Returns API result. Raises exception if all retries fail.
+    """
+    return client.images.generate(
+        model=image_model,
+        prompt=prompt,
+        size=size,
+    )
+
+
+@app.task
+def generate_audio_task(
+    text: str,
+    fname: str,
+    audio_model: str,
+    audio_voice: str,
+    verbosity: int,
+    dryrun: bool,
+) -> dict:
+    """
+    Celery task for generating audio.
+    Returns dict with status and filename.
+    """
+    load_dotenv()  # Load env vars in worker context
 
     if os.path.isfile(fname):
-        if args.verbosity >= 2:
+        if verbosity >= 2:
             print(f"[synth] Skipping existing file: {fname}")
-        return
+        return {"status": "skipped", "file": fname}
 
     text = strip_tags(text)
-    if args.dryrun:
-        if args.verbosity >= 1:
+    if dryrun:
+        if verbosity >= 1:
             print(f"[DRY RUN] Would generate audio: {fname} = '{text[:50]}...'")
-        return
+        return {"status": "dryrun", "file": fname}
 
-    if args.verbosity >= 2:
+    if verbosity >= 2:
         print(f"[synth] Generating audio for {fname}: '{text[:50]}...'")
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     try:
         # Preferred: streaming writer (efficient for larger outputs)
-        with client.audio.speech.with_streaming_response.create(
-            model=args.audio_model,
-            voice=args.audio_voice,
-            input=text,
-            response_format=audio_format,
-        ) as resp:
-            resp.stream_to_file(str(fname))
-        if args.verbosity >= 2:
+        _call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
+        if verbosity >= 2:
             print(f"[synth] Successfully created: {fname}")
-        return
+        return {"status": "success", "file": fname}
     except Exception as e:
         # Fallback to non-streaming API or models that don't support streaming in current SDK
         try:
-            resp = client.audio.speech.create(
-                model=args.audio_model,
-                voice=args.audio_voice,
-                input=text,
-                response_format=audio_format,
+            audio_bytes = _call_openai_audio_non_streaming(
+                client, audio_model, audio_voice, text
             )
-            audio_bytes = resp.read() if hasattr(resp, "read") else resp.content
             with open(fname, "wb") as f:
                 f.write(audio_bytes)
-            if args.verbosity >= 2:
+            if verbosity >= 2:
                 print(f"[synth] Successfully created (fallback): {fname}")
-            return
+            return {"status": "success", "file": fname}
         except OpenAIError as oe:
-            if args.verbosity >= 1:
-                print(f"ERR {args.audio_model}/{args.audio_voice}: {oe}")
+            if verbosity >= 1:
+                print(f"ERR {audio_model}/{audio_voice}: {oe}")
+            return {"status": "error", "file": fname, "error": str(oe)}
         except Exception as ee:
-            if args.verbosity >= 1:
-                print(f"ERR {args.audio_model}/{args.audio_voice}: {ee}")
+            if verbosity >= 1:
+                print(f"ERR {audio_model}/{audio_voice}: {ee}")
+            return {"status": "error", "file": fname, "error": str(ee)}
 
 
-def generate_image(
-    client: OpenAI,
+@app.task
+def generate_image_task(
     text: str,
     fname: str,
-    args: Namespace,
-) -> None:
+    image_model: str,
+    image_size: str,
+    verbosity: int,
+    dryrun: bool,
+) -> dict:
     """
-    Generate a vertical image using OpenAI Images API.
-    - assetgroup: logical group (e.g., 'word' or 'shortdef') used in filename
-    - text: prompt/description to visualize
-    - id: sequence id for the asset within the group
-    - uuid: sense UUID for consistent naming
-    - model: image model (e.g., 'gpt-image-1')
-    - size: image size (use a vertical dimension like '1024x1792')
-    - dryrun/verbosity: execution controls similar to synth()
+    Celery task for generating images.
+    Returns dict with status and filename.
     """
+    load_dotenv()  # Load env vars in worker context
 
     # Must be one of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default value) for gpt-image-1
     # one of 256x256, 512x512, or 1024x1024 for dall-e-2
@@ -118,9 +208,9 @@ def generate_image(
 
     size = "1024x1024"
     aspect_words = "square illustration (1:1 aspect)"
-    match args.image_model:
+    match image_model:
         case "gpt-image-1":
-            match args.image_size:
+            match image_size:
                 case "vertical":
                     size = "1024x1536"
                     aspect_words = "vertical illustration (9:16 aspect) "
@@ -129,7 +219,7 @@ def generate_image(
                     aspect_words = "horizontal illustration (16:9 aspect) "
 
         case "dall-e-3":
-            match args.image_size:
+            match image_size:
                 case "vertical":
                     size = "1024x1792"
                     aspect_words = "vertical illustration (4:7 aspect) "
@@ -138,16 +228,16 @@ def generate_image(
                     aspect_words = "horizontal illustration (7:4 aspect) "
 
     if os.path.isfile(fname):
-        if args.verbosity >= 2:
+        if verbosity >= 2:
             print(f"[generate_image] Skipping existing file: {fname}")
-        return
+        return {"status": "skipped", "file": fname}
 
     text = strip_tags(text)
-    if args.dryrun:
-        if args.verbosity >= 1:
+    if dryrun:
+        if verbosity >= 1:
             preview = (text or "").strip().replace("\n", " ")
             print(f"[DRY RUN] Would generate image: {fname} = '{preview[:60]}...'")
-        return
+        return {"status": "dryrun", "file": fname}
 
     # Encourage vertical composition and clarity in the prompt
 
@@ -156,31 +246,62 @@ def generate_image(
         f"that represents: {text}. No text, centered subject, solid background."
     )
 
-    if args.verbosity >= 2:
+    if verbosity >= 2:
         print(
-            f"[generate_image] Creating image for {fname} (size={size}, model={args.image_model})"
+            f"[generate_image] Creating image for {fname} (size={size}, model={image_model})"
         )
 
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
     try:
-        result = client.images.generate(
-            model=args.image_model,
-            prompt=prompt,
-            size=size,
-        )
+        result = _call_openai_image(client, image_model, prompt, size)
         # OpenAI Images API returns base64 JSON in data[0].b64_json
         b64 = result.data[0].b64_json if hasattr(result.data[0], "b64_json") else None
         if not b64:
             raise ValueError("No image data returned from API")
         with open(fname, "wb") as f:
             f.write(base64.b64decode(b64))
-        if args.verbosity >= 2:
+        if verbosity >= 2:
             print(f"[generate_image] Wrote {fname}")
+        return {"status": "success", "file": fname}
     except OpenAIError as oe:
-        if args.verbosity >= 1:
+        if verbosity >= 1:
             print(f"[generate_image] OpenAI error: {oe}")
+        return {"status": "error", "file": fname, "error": str(oe)}
     except Exception as e:
-        if args.verbosity >= 1:
+        if verbosity >= 1:
             print(f"[generate_image] Error: {e}")
+        return {"status": "error", "file": fname, "error": str(e)}
+
+
+def generate_audio(client: OpenAI, text: str, fname: str, args: Namespace) -> None:
+    """
+    Synchronous wrapper for generate_audio_task.
+    Used when not running in Celery mode.
+    """
+    generate_audio_task(
+        text=text,
+        fname=fname,
+        audio_model=args.audio_model,
+        audio_voice=args.audio_voice,
+        verbosity=args.verbosity,
+        dryrun=args.dryrun,
+    )
+
+
+def generate_image(client: OpenAI, text: str, fname: str, args: Namespace) -> None:
+    """
+    Synchronous wrapper for generate_image_task.
+    Used when not running in Celery mode.
+    """
+    generate_image_task(
+        text=text,
+        fname=fname,
+        image_model=args.image_model,
+        image_size=args.image_size,
+        verbosity=args.verbosity,
+        dryrun=args.dryrun,
+    )
 
 
 def main():
@@ -243,6 +364,11 @@ def main():
         action="store_true",
         help="Show what would be done without actually doing it",
     )
+    parser.add_argument(
+        "--enqueue",
+        action="store_true",
+        help="Enqueue all jobs to Celery workers instead of processing synchronously",
+    )
 
     args = parser.parse_args()
 
@@ -254,6 +380,8 @@ def main():
             print(f"Audio format={audio_format}, outdir={args.outdir}")
         if args.dryrun:
             print("[DRY RUN MODE] - No files will be created")
+        if args.enqueue:
+            print("[ENQUEUE MODE] - Jobs will be queued for Celery workers")
 
     if args.no_audio and args.no_images:
         if args.verbosity >= 1:
@@ -273,6 +401,71 @@ def main():
 
     if args.verbosity >= 1:
         print(f"Found {len(words)} words in database")
+
+    # Enqueue mode: collect all jobs and send to Celery
+    if args.enqueue:
+        job_count = 0
+        if args.verbosity >= 1:
+            print("Enqueuing jobs to Celery...")
+
+        for w in words:
+            uuids = db.get_uuids(w.word)
+            for uuid in uuids:
+                if not args.no_audio:
+                    # Enqueue word audio
+                    generate_audio_task.delay(
+                        text=w.word,
+                        fname=os.path.join(
+                            args.outdir, f"word_{uuid}_0.{audio_format}"
+                        ),
+                        audio_model=args.audio_model,
+                        audio_voice=args.audio_voice,
+                        verbosity=args.verbosity,
+                        dryrun=args.dryrun,
+                    )
+                    job_count += 1
+
+                    # Enqueue definition audios
+                    for sd in db.get_shortdefs(uuid):
+                        generate_audio_task.delay(
+                            text=sd.definition,
+                            fname=os.path.join(
+                                args.outdir,
+                                f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
+                            ),
+                            audio_model=args.audio_model,
+                            audio_voice=args.audio_voice,
+                            verbosity=args.verbosity,
+                            dryrun=args.dryrun,
+                        )
+                        job_count += 1
+
+                if not args.no_images:
+                    # Enqueue definition images
+                    for sd in db.get_shortdefs(uuid):
+                        generate_image_task.delay(
+                            text=sd.definition,
+                            fname=os.path.join(
+                                args.outdir, f"image_{sd.uuid}_{sd.id}.{image_format}"
+                            ),
+                            image_model=args.image_model,
+                            image_size=args.image_size,
+                            verbosity=args.verbosity,
+                            dryrun=args.dryrun,
+                        )
+                        job_count += 1
+
+        db.close()
+        if args.verbosity >= 1:
+            print(f"Enqueued {job_count} jobs to Celery workers")
+            print("Monitor progress with: celery -A build_assets flower")
+        return
+
+    # Synchronous mode: process jobs directly
+    # Initialize OpenAI client only if needed
+    client = None
+    if not args.dryrun:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     # Use progress bar only for verbosity level 1
     if args.verbosity == 1:
