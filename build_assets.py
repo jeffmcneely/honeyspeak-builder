@@ -16,18 +16,10 @@ from rich.progress import Progress, track
 from dotenv import load_dotenv
 import re
 from celery import Celery
-from tenacity import (
-    retry,
-    stop_after_delay,
-    wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
-)
 import logging
 import json
 from datetime import datetime
 
-# Configure logging for tenacity
 logger = logging.getLogger(__name__)
 
 # Celery configuration
@@ -116,12 +108,6 @@ def strip_tags(text: str) -> str:
     return re.sub(r"\{.*?\}", "", text)
 
 
-@retry(
-    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
-    wait=wait_exponential(multiplier=1, min=1, max=60),
-    stop=stop_after_delay(60),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
 def _call_openai_audio_streaming(
     client: OpenAI, audio_model: str, audio_voice: str, text: str, fname: str
 ) -> None:
@@ -138,12 +124,6 @@ def _call_openai_audio_streaming(
         resp.stream_to_file(str(fname))
 
 
-@retry(
-    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
-    wait=wait_exponential(multiplier=1, min=1, max=60),
-    stop=stop_after_delay(60),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
 def _call_openai_audio_non_streaming(
     client: OpenAI, audio_model: str, audio_voice: str, text: str
 ) -> bytes:
@@ -160,12 +140,6 @@ def _call_openai_audio_non_streaming(
     return resp.read() if hasattr(resp, "read") else resp.content
 
 
-@retry(
-    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
-    wait=wait_exponential(multiplier=1, min=1, max=60),
-    stop=stop_after_delay(60),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
 def _call_openai_image(client: OpenAI, image_model: str, prompt: str, size: str):
     """
     Call OpenAI images API with retry logic.
@@ -309,8 +283,8 @@ def generate_image_task(
     # Encourage vertical composition and clarity in the prompt
 
     prompt = (
-        f"Create a clean, high-contrast {aspect_words}"
-        f"that represents: {text}. No text, centered subject, solid background."
+        f"Create a clean, high-contrast educational non-offensive {aspect_words}"
+        f"that represents: {text}. No text, centered subject, solid background. The image should not be sexual, suggestive, or depict nudity in any form."
     )
 
     if verbosity >= 2:
@@ -338,14 +312,15 @@ def generate_image_task(
         )
         if verbosity >= 1:
             print(f"[generate_image] 400 error: {bre}")
-        return {"status": "error", "file": fname, "error": f"400: {str(bre)}"}
+        return {"status": "error", "file": fname, "error": f"400: {str(bre)} {text}"}
     except OpenAIError as oe:
         if verbosity >= 1:
             print(f"[generate_image] OpenAI error: {oe}")
         return {"status": "error", "file": fname, "error": str(oe)}
+
     except Exception as e:
         if verbosity >= 1:
-            print(f"[generate_image] Error: {e}")
+            print(f"[generate_image] {text} Error: {e}")
         return {"status": "error", "file": fname, "error": str(e)}
 
 
