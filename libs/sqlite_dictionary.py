@@ -26,7 +26,7 @@ SQLITE_SCHEMA = [
         uuid TEXT,
         assetgroup TEXT,
         sid INTEGER,
-        package INTEGER,
+        package TEXT NOT NULL CHECK(length(package) = 2),
         filename TEXT,
         FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
         UNIQUE(uuid, assetgroup, sid)
