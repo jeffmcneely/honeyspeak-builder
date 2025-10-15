@@ -4,7 +4,13 @@ import os
 from pathlib import Path
 import base64
 from openai import OpenAI
-from openai._exceptions import OpenAIError, APIError, RateLimitError, APITimeoutError
+from openai._exceptions import (
+    OpenAIError,
+    APIError,
+    RateLimitError,
+    APITimeoutError,
+    BadRequestError,
+)
 from libs.sqlite_dictionary import SQLiteDictionary
 from rich.progress import Progress, track
 from dotenv import load_dotenv
@@ -18,6 +24,8 @@ from tenacity import (
     before_sleep_log,
 )
 import logging
+import json
+from datetime import datetime
 
 # Configure logging for tenacity
 logger = logging.getLogger(__name__)
@@ -58,6 +66,47 @@ IMAGE_SIZES = ["square", "vertical", "horizontal"]
 
 audio_format = "aac"
 image_format = "png"
+
+
+def log_400_error(error: BadRequestError, text: str, context: str) -> None:
+    """
+    Log 400 Bad Request errors from OpenAI API to errors.txt file.
+
+    Args:
+        error: The BadRequestError exception
+        text: The text/prompt that caused the error
+        context: Context information (e.g., 'audio', 'image')
+    """
+    error_file = Path("errors.txt")
+
+    timestamp = datetime.now().isoformat()
+    error_message = str(error)
+
+    # Try to extract the error message from the response if available
+    error_details = ""
+    if hasattr(error, "response") and error.response is not None:
+        try:
+            response_json = error.response.json()
+            if "error" in response_json and "message" in response_json["error"]:
+                error_details = response_json["error"]["message"]
+        except:
+            pass
+
+    # Build log entry
+    log_entry = f"""
+{'='*80}
+Timestamp: {timestamp}
+Context: {context}
+Status Code: 400
+Error Message: {error_details or error_message}
+Input Text: {text}
+{'='*80}
+
+"""
+
+    # Append to errors.txt
+    with open(error_file, "a", encoding="utf-8") as f:
+        f.write(log_entry)
 
 
 def strip_tags(text: str) -> str:
@@ -166,6 +215,14 @@ def generate_audio_task(
         if verbosity >= 2:
             print(f"[synth] Successfully created: {fname}")
         return {"status": "success", "file": fname}
+    except BadRequestError as bre:
+        # Log 400 errors to errors.txt
+        log_400_error(
+            bre, text, f"audio generation (model={audio_model}, voice={audio_voice})"
+        )
+        if verbosity >= 1:
+            print(f"ERR 400 {audio_model}/{audio_voice}: {bre}")
+        return {"status": "error", "file": fname, "error": f"400: {str(bre)}"}
     except Exception as e:
         # Fallback to non-streaming API or models that don't support streaming in current SDK
         try:
@@ -177,6 +234,16 @@ def generate_audio_task(
             if verbosity >= 2:
                 print(f"[synth] Successfully created (fallback): {fname}")
             return {"status": "success", "file": fname}
+        except BadRequestError as bre:
+            # Log 400 errors to errors.txt
+            log_400_error(
+                bre,
+                text,
+                f"audio generation fallback (model={audio_model}, voice={audio_voice})",
+            )
+            if verbosity >= 1:
+                print(f"ERR 400 {audio_model}/{audio_voice}: {bre}")
+            return {"status": "error", "file": fname, "error": f"400: {str(bre)}"}
         except OpenAIError as oe:
             if verbosity >= 1:
                 print(f"ERR {audio_model}/{audio_voice}: {oe}")
@@ -264,6 +331,14 @@ def generate_image_task(
         if verbosity >= 2:
             print(f"[generate_image] Wrote {fname}")
         return {"status": "success", "file": fname}
+    except BadRequestError as bre:
+        # Log 400 errors to errors.txt
+        log_400_error(
+            bre, text, f"image generation (model={image_model}, size={image_size})"
+        )
+        if verbosity >= 1:
+            print(f"[generate_image] 400 error: {bre}")
+        return {"status": "error", "file": fname, "error": f"400: {str(bre)}"}
     except OpenAIError as oe:
         if verbosity >= 1:
             print(f"[generate_image] OpenAI error: {oe}")
