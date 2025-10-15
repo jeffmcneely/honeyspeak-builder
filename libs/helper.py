@@ -176,6 +176,3 @@ def polly_generate_audio(session, text: str, voice_id: str, engine: str = "stand
     except Exception as e:
         print(f"Error generating audio with Polly: {e}")
         return False
-
-
-# DynamoDB listing removed - Core Data provides better querying
