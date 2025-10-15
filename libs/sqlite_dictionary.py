@@ -325,7 +325,7 @@ class SQLiteDictionary:
         uuid_: str,
         assetgroup: Literal["word", "image", "shortdef"],
         sid: int,
-        package: int,
+        package: str,
         filename: str,
     ) -> bool:
         try:
