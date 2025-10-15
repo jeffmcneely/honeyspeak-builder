@@ -192,3 +192,4 @@ api_usage.txt
 *.sqlite-wal
 assets
 assets_hires
+errors.txt
