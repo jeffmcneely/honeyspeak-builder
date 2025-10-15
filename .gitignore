@@ -181,3 +181,14 @@ samconfig.toml
 event.json
 template.yml
 
+
+.env
+api_usage.txt
+*.xcdatamodeld
+
+
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+assets
+assets_hires

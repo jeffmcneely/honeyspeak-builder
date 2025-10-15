@@ -1,0 +1,1571 @@
+[
+  {
+    "meta": {
+      "id": "water:1",
+      "uuid": "4f1b9f17-247e-47c4-a43d-e6955d716bf3",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "f99b1fdb-bd04-4273-a9dc-994effcb513b",
+        "tsrc": "collegiate"
+      },
+      "highlight": "yes",
+      "stems": [
+        "water",
+        "waters",
+        "a fish out of water",
+        "blood is thicker than water",
+        "come hell or high water",
+        "dead in the water",
+        "hold water",
+        "in deep water",
+        "keep your head above water",
+        "like a duck to water",
+        "like water",
+        "muddy the waters",
+        "pass water",
+        "pour/throw cold water on",
+        "pour cold water on",
+        "throw cold water on",
+        "still waters run deep",
+        "test the waters/water",
+        "test the water",
+        "test the waters",
+        "tread water",
+        "troubled waters",
+        "water breaks",
+        "waters break",
+        "water off a duck's back",
+        "water off a ducks back",
+        "water under the bridge",
+        "drinking water",
+        "running water",
+        "dangerous waters",
+        "murky waters",
+        "uncharted waters"
+      ],
+      "app-shortdef": {
+        "hw": "water:1",
+        "fl": "noun",
+        "def": [
+          "{bc} the clear liquid that has no color, taste, or smell, that falls from clouds as rain, that forms streams, lakes, and seas, and that is used for drinking, washing, etc.",
+          "{bc} an area of water (such as a lake, river, or ocean)",
+          "{b}{it}waters{/it}{/b} {bc} a specific area of water {it}especially{/it} {bc} an area of seawater"
+        ]
+      },
+      "offensive": false
+    },
+    "hom": 1,
+    "hwi": {
+      "hw": "wa*ter",
+      "prs": [
+        {
+          "ipa": "ˈwɑːtɚ",
+          "sound": {
+            "audio": "water002"
+          }
+        }
+      ]
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "-ters",
+        "if": "wa*ters"
+      }
+    ],
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sn": "1",
+                "sgram": "noncount",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}the clear liquid that has no color, taste, or smell, that falls from clouds as rain, that forms streams, lakes, and seas, and that is used for drinking, washing, etc. "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "Would you like a glass of {it}water{/it}?"
+                      },
+                      {
+                        "t": "bottled/mineral/spring {it}water{/it}"
+                      },
+                      {
+                        "t": "There's {it}water{/it} dripping from the ceiling."
+                      },
+                      {
+                        "t": "Drink some {it}water{/it}."
+                      },
+                      {
+                        "t": "{phrase}drinking water{/phrase} [=water that is safe for drinking]"
+                      },
+                      {
+                        "t": "The house has hot and cold {phrase}running water{/phrase}. [=water carried by pipes inside a building]"
+                      }
+                    ]
+                  ],
+                  [
+                    "text",
+                    "{dx}see also {dxt|bathwater||} {dxt|freshwater||} {dxt|groundwater||} {dxt|holy water||} {dxt|ice water||} {dxt|mineral water||} {dxt|rainwater||} {dxt|rose water||} {dxt|saltwater||} {dxt|seawater||} {dxt|soda water||} {dxt|tap water||} {dxt|toilet water||} {dxt|white water||}{/dx}"
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "2",
+                "sgram": "noncount",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}an area of water (such as a lake, river, or ocean) "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "deep/shallow {it}water{/it}"
+                      },
+                      {
+                        "t": "The kids love playing in the {it}water{/it}."
+                      },
+                      {
+                        "t": "A stick was floating on/in the {it}water{/it}."
+                      },
+                      {
+                        "t": "They like to vacation near the {it}water{/it}."
+                      }
+                    ]
+                  ],
+                  [
+                    "text",
+                    "{dx}see also {dxt|underwater||}{/dx}"
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "3",
+                "bnote": "waters",
+                "sgram": "plural",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a specific area of water"
+                  ]
+                ],
+                "sdsense": {
+                  "sd": "especially",
+                  "dt": [
+                    [
+                      "text",
+                      "{bc}an area of seawater "
+                    ],
+                    [
+                      "vis",
+                      [
+                        {
+                          "t": "frigid northern {it}waters{/it}"
+                        },
+                        {
+                          "t": "coastal/shallow {it}waters{/it}"
+                        },
+                        {
+                          "t": "We are sailing in international {it}waters{/it}."
+                        },
+                        {
+                          "t": "They were fishing in Canadian {it}waters{/it}."
+                        }
+                      ]
+                    ],
+                    [
+                      "uns",
+                      [
+                        [
+                          [
+                            "text",
+                            "often used figuratively "
+                          ],
+                          [
+                            "vis",
+                            [
+                              {
+                                "t": "We are entering into {phrase}dangerous waters{/phrase} [=a difficult or complicated situation] whenever we discuss religion in public."
+                              },
+                              {
+                                "t": "He began studying the {phrase}murky waters{/phrase} [=confusing details] of copyright law."
+                              },
+                              {
+                                "t": "The company is moving into {phrase}uncharted waters{/phrase} [=new and unknown areas] with its Internet marketing campaign."
+                              }
+                            ]
+                          ]
+                        ]
+                      ]
+                    ],
+                    [
+                      "text",
+                      "{dx}see also {dxt|headwaters||} {dxt|territorial waters||}{/dx}"
+                    ]
+                  ]
+                }
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "4",
+                "sgram": "noncount",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}methods of travel that involve boats and ships "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "They came by {it}water{/it}. [=by traveling on a boat or ship]"
+                      }
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "dros": [
+      {
+        "drp": "a fish out of water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|fish:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "blood is thicker than water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|blood||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "come hell or high water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|hell||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "dead in the water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|dead:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "hold water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "sls": [
+                      "informal"
+                    ],
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}to be possible or believable"
+                      ],
+                      [
+                        "uns",
+                        [
+                          [
+                            [
+                              "text",
+                              "usually used in negative statements "
+                            ],
+                            [
+                              "vis",
+                              [
+                                {
+                                  "t": "Her argument doesn't {it}hold water{/it}. [=does not make sense]"
+                                },
+                                {
+                                  "t": "His theory cannot {it}hold water{/it}. [=his theory is wrong]"
+                                }
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "in deep water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|deep:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "keep your head above water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|head:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "like a duck to water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|duck:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "like water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "sls": [
+                      "informal"
+                    ],
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}in large amounts "
+                      ],
+                      [
+                        "vis",
+                        [
+                          {
+                            "t": "He spends money {it}like water{/it}."
+                          }
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "muddy the waters",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|muddy:2||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "pass water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "sls": [
+                      "medical"
+                    ],
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}to send urine out of the body {bc}{sx|urinate||} "
+                      ],
+                      [
+                        "vis",
+                        [
+                          {
+                            "t": "a patient who is finding it difficult to {it}pass water{/it}"
+                          }
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "pour/throw cold water on",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}to say that you do not like (an idea, suggestion, etc.) in a way that stops other people from doing it or from feeling enthusiastic about it "
+                      ],
+                      [
+                        "vis",
+                        [
+                          {
+                            "t": "He wanted to buy a new car, but I {it}poured/threw cold water on{/it} that idea. [=I said he should not buy a new car]"
+                          }
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "still waters run deep",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|still:2||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "test the waters/water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|test:2||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "tread water",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|tread:1||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "troubled waters",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "text",
+                        "{dx}see {dxt|troubled||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "water breaks",
+        "rsl": "US",
+        "vrs": [
+          {
+            "vl": "or British",
+            "va": "waters break"
+          }
+        ],
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "uns",
+                        [
+                          [
+                            [
+                              "text",
+                              "used to describe what happens when fluid suddenly comes from a pregnant woman's body because her baby will be born soon "
+                            ],
+                            [
+                              "vis",
+                              [
+                                {
+                                  "t": "Her {it}water broke{/it} early."
+                                }
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "water off a duck's back",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "sls": [
+                      "informal"
+                    ],
+                    "dt": [
+                      [
+                        "snote",
+                        [
+                          [
+                            "t",
+                            "If something, such as criticism, advice, etc., is ({it}like{/it}) {it}water off a duck's back{/it}, it has no effect on someone."
+                          ],
+                          [
+                            "vis",
+                            [
+                              {
+                                "t": "He tried to convince her to take the job, but his advice was {it}like water off a duck's back{/it}. [=she completely ignored his advice]"
+                              }
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "drp": "water under the bridge",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "dt": [
+                      [
+                        "uns",
+                        [
+                          [
+                            [
+                              "text",
+                              "used to say that something happened in the past and is no longer important or worth arguing about "
+                            ],
+                            [
+                              "vis",
+                              [
+                                {
+                                  "t": "We had our differences in the past, but that's all {it}water under the bridge{/it} now."
+                                }
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "shortdef": [
+      "the clear liquid that has no color, taste, or smell, that falls from clouds as rain, that forms streams, lakes, and seas, and that is used for drinking, washing, etc.",
+      "an area of water (such as a lake, river, or ocean)",
+      "a specific area of water; especially : an area of seawater —often used figuratively"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water:2",
+      "uuid": "1dd9cefd-d916-4602-a69a-b0e7e9e10f07",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "c165bee2-47fd-4d9c-bffe-1ca44db60b4a",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water",
+        "watered",
+        "watering",
+        "waters",
+        "water down"
+      ],
+      "app-shortdef": {
+        "hw": "water:2",
+        "fl": "verb",
+        "def": [
+          "{bc} to pour water on (something, such as a plant)",
+          "{bc} to give (an animal) water to drink",
+          "{it}of the eyes{/it} {bc} to produce tears"
+        ]
+      },
+      "offensive": false
+    },
+    "hom": 2,
+    "hwi": {
+      "hw": "water",
+      "altprs": [
+        {
+          "ipa": "ˈwɑːtɚ"
+        }
+      ]
+    },
+    "fl": "verb",
+    "ins": [
+      {
+        "ifc": "-ters",
+        "if": "waters"
+      },
+      {
+        "ifc": "-tered",
+        "if": "watered"
+      },
+      {
+        "ifc": "-ter*ing",
+        "if": "water*ing"
+      }
+    ],
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sn": "1",
+                "sgram": "+ obj",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}to pour water on (something, such as a plant) "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "We need to {it}water{/it} the lawn/garden/plants."
+                      }
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "2",
+                "sgram": "+ obj",
+                "dt": [
+                  [
+                    "text",
+                    "{bc}to give (an animal) water to drink "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "They fed and {it}watered{/it} the horses in the barn."
+                      }
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "3",
+                "sgram": "no obj",
+                "sls": [
+                  "of the eyes"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}to produce tears "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "My eyes were {it}watering{/it} as I chopped the onions."
+                      }
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "4",
+                "sgram": "no obj",
+                "sls": [
+                  "of the mouth"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}to become wet with saliva especially because you want to eat or taste something "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "Just smelling chocolate makes my mouth {it}water{/it}. [=makes me want to taste or eat chocolate]"
+                      }
+                    ]
+                  ],
+                  [
+                    "text",
+                    "{dx}see also {dxt|mouth-watering||}{/dx}"
+                  ]
+                ]
+              }
+            ]
+          ],
+          [
+            [
+              "sense",
+              {
+                "sn": "5",
+                "sgram": "+ obj",
+                "sls": [
+                  "technical"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}to supply water to (a region or city)"
+                  ],
+                  [
+                    "uns",
+                    [
+                      [
+                        [
+                          "text",
+                          "usually used as {it}(be) watered{/it} "
+                        ],
+                        [
+                          "vis",
+                          [
+                            {
+                              "t": "The vineyards are in a region {it}watered{/it} by two rivers."
+                            }
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "dros": [
+      {
+        "drp": "water down",
+        "gram": "phrasal verb",
+        "def": [
+          {
+            "sseq": [
+              [
+                [
+                  "sense",
+                  {
+                    "sphrasev": {
+                      "phrs": [
+                        {
+                          "pva": "water (something) down"
+                        },
+                        {
+                          "pvl": "or",
+                          "pva": "water down (something)"
+                        }
+                      ]
+                    },
+                    "sn": "1",
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}to make (an alcoholic drink) weaker by adding water to it "
+                      ],
+                      [
+                        "vis",
+                        [
+                          {
+                            "t": "Someone {it}watered down{/it} [={it}diluted{/it}] the punch."
+                          }
+                        ]
+                      ]
+                    ]
+                  }
+                ]
+              ],
+              [
+                [
+                  "sense",
+                  {
+                    "sn": "2",
+                    "sls": [
+                      "disapproving"
+                    ],
+                    "dt": [
+                      [
+                        "text",
+                        "{bc}to make (something) less effective, powerful, etc. "
+                      ],
+                      [
+                        "vis",
+                        [
+                          {
+                            "t": "He had to {it}water down{/it} [={it}simplify{/it}] the lecture for the younger students."
+                          },
+                          {
+                            "t": "The movie {it}watered down{/it} the lessons of the book."
+                          }
+                        ]
+                      ],
+                      [
+                        "text",
+                        "{dx}see also {dxt|watered-down||}{/dx}"
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "shortdef": [
+      "to pour water on (something, such as a plant)",
+      "to give (an animal) water to drink",
+      "to produce tears"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water balloon",
+      "uuid": "c08647e6-a760-4987-8a48-cec632a7cdb1",
+      "src": "learners",
+      "section": "alpha",
+      "stems": [
+        "water balloon",
+        "water balloons"
+      ],
+      "app-shortdef": {
+        "hw": "water balloon",
+        "fl": "noun",
+        "def": [
+          "{it}chiefly US{/it} {bc} a balloon that is filled with water"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water balloon"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ -loons",
+        "if": "water balloons"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sls": [
+                  "chiefly US"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a balloon that is filled with water "
+                  ],
+                  [
+                    "vis",
+                    [
+                      {
+                        "t": "The boys were throwing {it}water balloons{/it} at each other."
+                      }
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a balloon that is filled with water"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water bed",
+      "uuid": "961c5a81-e243-4845-9906-bbc0dcbbf066",
+      "src": "learners",
+      "section": "alpha",
+      "stems": [
+        "water bed",
+        "water beds"
+      ],
+      "app-shortdef": {
+        "hw": "water bed",
+        "fl": "noun",
+        "def": [
+          "{bc} a bed that has a mattress which is made of rubber or plastic and is filled with water"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water bed"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ beds",
+        "if": "water beds"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a bed that has a mattress which is made of rubber or plastic and is filled with water"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a bed that has a mattress which is made of rubber or plastic and is filled with water"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water buffalo",
+      "uuid": "20beac73-363b-41d2-855a-0efa51351451",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "7cebc43b-73e8-444e-a12b-e31a7f2cfb4d",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water buffalo",
+        "water buffalos",
+        "water buffaloes"
+      ],
+      "app-shortdef": {
+        "hw": "water buffalo",
+        "fl": "noun",
+        "def": [
+          "{bc} a large animal like a cow with long horns that lives in Asia and is often used to pull plows"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water buffalo"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ buffalo",
+        "if": "water buffalo"
+      },
+      {
+        "il": "or",
+        "ifc": "~ buffaloes",
+        "if": "water buffaloes"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a large animal like a cow with long horns that lives in Asia and is often used to pull plows"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "artl": [
+      {
+        "artid": "water_buffalo_rev.tif",
+        "capt": "water buffalo",
+        "dim": "87.1,65.3"
+      }
+    ],
+    "shortdef": [
+      "a large animal like a cow with long horns that lives in Asia and is often used to pull plows"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water bug",
+      "uuid": "52ee2e00-6c0b-4e62-84c5-6f430fe43e1c",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "3d8a2c71-7a8f-4c81-871c-17b02e0636ec",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water bug",
+        "water bugs"
+      ],
+      "app-shortdef": {
+        "hw": "water bug",
+        "fl": "noun",
+        "def": [
+          "{it}US{/it} {bc} a small insect that lives in or near water"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water bug"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ bugs",
+        "if": "water bugs"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sls": [
+                  "US"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a small insect that lives in or near water"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a small insect that lives in or near water"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water butt",
+      "uuid": "cfd0e549-2f73-41ae-965c-64b8e9e0ab3f",
+      "src": "learners",
+      "section": "alpha",
+      "stems": [
+        "water butt",
+        "water butts"
+      ],
+      "app-shortdef": {
+        "hw": "water butt",
+        "fl": "noun",
+        "def": [
+          "{it}British{/it} {bc} a large container for collecting or storing a liquid (such as rainwater)"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water butt"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ butts",
+        "if": "water butts"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sls": [
+                  "British"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a large container for collecting or storing a liquid (such as rainwater)"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a large container for collecting or storing a liquid (such as rainwater)"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water cannon",
+      "uuid": "751929d8-6531-4adc-a96c-f38b0c3db167",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "9bc391f0-5d9a-409c-8274-890506ec9933",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water cannon",
+        "water cannons"
+      ],
+      "app-shortdef": {
+        "hw": "water cannon",
+        "fl": "noun",
+        "def": [
+          "{bc} a machine that shoots a large, powerful stream of water and that is used by police to control violent crowds"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water cannon"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ cannons",
+        "if": "water cannons"
+      },
+      {
+        "il": "or",
+        "ifc": "~ cannon",
+        "if": "water cannon"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a machine that shoots a large, powerful stream of water and that is used by police to control violent crowds"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a machine that shoots a large, powerful stream of water and that is used by police to control violent crowds"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water chestnut",
+      "uuid": "3d663222-c87f-4f59-9a6f-7fe8a4f90619",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "40aa6107-f367-4756-9b23-ca56fc52966b",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water chestnut",
+        "water chestnuts"
+      ],
+      "app-shortdef": {
+        "hw": "water chestnut",
+        "fl": "noun",
+        "def": [
+          "{bc} the white root of a plant that grows in water and that is often used in Chinese cooking"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water chestnut"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ -nuts",
+        "if": "water chestnuts"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "dt": [
+                  [
+                    "text",
+                    "{bc}the white root of a plant that grows in water and that is often used in Chinese cooking"
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "the white root of a plant that grows in water and that is often used in Chinese cooking"
+    ]
+  },
+  {
+    "meta": {
+      "id": "water closet",
+      "uuid": "9fa15b04-9bda-44bc-b1dd-a299ff841643",
+      "src": "learners",
+      "section": "alpha",
+      "target": {
+        "tuuid": "2ba4ca5c-c914-4a81-9946-49dc9cf68777",
+        "tsrc": "collegiate"
+      },
+      "stems": [
+        "water closet",
+        "water closets"
+      ],
+      "app-shortdef": {
+        "hw": "water closet",
+        "fl": "noun",
+        "def": [
+          "{it}old-fashioned{/it} {bc} a room containing a toilet"
+        ]
+      },
+      "offensive": false
+    },
+    "hwi": {
+      "hw": "water closet"
+    },
+    "fl": "noun",
+    "ins": [
+      {
+        "il": "plural",
+        "ifc": "~ -ets",
+        "if": "water closets"
+      }
+    ],
+    "gram": "count",
+    "def": [
+      {
+        "sseq": [
+          [
+            [
+              "sense",
+              {
+                "sls": [
+                  "old-fashioned"
+                ],
+                "dt": [
+                  [
+                    "text",
+                    "{bc}a room containing a toilet"
+                  ],
+                  [
+                    "uns",
+                    [
+                      [
+                        [
+                          "text",
+                          "abbr. {it}WC{/it}"
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    ],
+    "shortdef": [
+      "a room containing a toilet—abbr. WC"
+    ]
+  }
+]

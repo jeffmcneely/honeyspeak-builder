@@ -1,0 +1,10 @@
+aircraft
+airport
+alligator
+ambulance
+ankle
+ant
+aunt
+antler
+apartment
+water

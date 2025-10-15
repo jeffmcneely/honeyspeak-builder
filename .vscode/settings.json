@@ -1,0 +1,13 @@
+{
+  "[markdown]": {
+    "editor.inlineSuggest.enabled": false
+  },
+  "editor.insertSpaces": true,
+  "editor.tabSize": 4,
+  "editor.detectIndentation": false,
+  "[python]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4,
+    "editor.formatOnSave": true
+  }  
+}
