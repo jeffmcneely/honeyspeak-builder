@@ -9,5 +9,12 @@
     "editor.insertSpaces": true,
     "editor.tabSize": 4,
     "editor.formatOnSave": true
-  }  
+  },
+  "terminal.integrated.profiles.linux": {
+    "venv": {
+      "path": "zsh", // works with "bash" too 
+      "args": ["-c", "source venv/bin/activate; zsh -i"]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "venv"
 }
