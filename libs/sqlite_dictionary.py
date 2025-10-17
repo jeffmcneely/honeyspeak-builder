@@ -32,6 +32,7 @@ SQLITE_SCHEMA = [
         UNIQUE(uuid, assetgroup, sid)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
+    """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
 ]
 
 
