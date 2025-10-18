@@ -226,30 +226,31 @@ def main():
 
     db.close()
     if not args.dryrun:
-        if args.verbosity >= 1:
-            print(f"Copying Dictionary.sqlite to {os.getenv('IOS_PATH')}/db.sqlite")
-        try:
-            shutil.copyfile(
-                "Dictionary.sqlite", os.path.join(os.getenv("IOS_PATH"), "db.sqlite")
-            )
-        except Exception as e:
-            print(
-                f"Error copying Dictionary.sqlite: {e} to {os.getenv('IOS_PATH')}/db.sqlite"
-            )
-        if args.verbosity >= 1:
-            print(f"Copying assets/packages*.zip to {os.getenv('IOS_PATH')}")
-            # Copy all package_*.zip files to IOS_PATH
+        if os.getenv("COPYTO_DIRECTORY","") != "":
+            if args.verbosity >= 1:
+                print(f"Copying Dictionary.sqlite to {os.getenv('COPYTO_DIRECTORY')}/database.sqlite")
             try:
-                for filename in os.listdir("assets"):
-                    if filename.startswith("package_") and filename.endswith(".zip"):
-                        shutil.copy(
-                            os.path.join("assets", filename),
-                            os.path.join(os.getenv("IOS_PATH"), filename),
-                        )
+                shutil.copyfile(
+                    "Dictionary.sqlite", os.path.join(os.getenv("COPYTO_DIRECTORY"), "database.sqlite")
+                )
             except Exception as e:
                 print(
-                    f"Error copying package zip files: {e} to {os.getpid('IOS_PATH')}"
+                    f"Error copying Dictionary.sqlite: {e} to {os.getenv('COPYTO_DIRECTORY')}/database.sqlite"
                 )
+            if args.verbosity >= 1:
+                print(f"Copying assets/packages*.zip to {os.getenv('COPYTO_DIRECTORY')}")
+                # Copy all package_*.zip files to COPYTO_DIRECTORY
+                try:
+                    for filename in os.listdir("assets"):
+                        if filename.startswith("package_") and filename.endswith(".zip"):
+                            shutil.copy(
+                                os.path.join("assets", filename),
+                                os.path.join(os.getenv("COPYTO_DIRECTORY"), filename),
+                            )
+                except Exception as e:
+                    print(
+                        f"Error copying package zip files: {e} to {os.getenv('COPYTO_DIRECTORY')}"
+                    )
     if args.verbosity >= 1:
         print("Packaging complete!")
 
