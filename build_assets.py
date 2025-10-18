@@ -173,6 +173,10 @@ def generate_audio_task(
         return {"status": "skipped", "file": fname}
 
     text = strip_tags(text)
+    if len(text) < 10:
+        if verbosity >= 2:
+            print(f"[synth] Text too short, skipping audio generation for: {fname}")
+        return {"status": "skipped", "file": fname}
     if dryrun:
         if verbosity >= 1:
             print(f"[DRY RUN] Would generate audio: {fname} = '{text[:50]}...'")
@@ -274,6 +278,12 @@ def generate_image_task(
         return {"status": "skipped", "file": fname}
 
     text = strip_tags(text)
+    if len(text) < 10:
+        if verbosity >= 2:
+            print(
+                f"[generate_image] Text too short, skipping image generation for: {fname}"
+            )
+        return {"status": "skipped", "file": fname}
     if dryrun:
         if verbosity >= 1:
             preview = (text or "").strip().replace("\n", " ")
