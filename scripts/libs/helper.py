@@ -24,25 +24,6 @@ def print_json_rich(data):
         print(f"Error printing JSON with rich: {e}")
 
 
-def get_aws_secret(secret_client, secret_name) -> dict:
-    """
-    Fetch a secret value from AWS Secrets Manager.
-    Returns the secret string for the given secret name.
-    """
-
-    try:
-        get_secret_value_response = secret_client.get_secret_value(SecretId=secret_name)
-    except ClientError as e:
-        raise Exception(f"Unable to fetch secret {secret_name}: {e}")
-
-    if "SecretString" in get_secret_value_response:
-        return json.loads(get_secret_value_response["SecretString"])
-    else:
-        # If the secret is binary
-        import base64
-
-        return json.loads(base64.b64decode(get_secret_value_response["SecretBinary"]))
-
 
 def upload_file_to_s3(s3, file_path, bucket_name, object_name=None) -> bool:
     """
@@ -127,29 +108,6 @@ def s3_file_exists(s3, bucket_name: str, object_name: str) -> bool:
         else:
             print(f"Error checking existence of {object_name} in S3: {e}")
             return False
-
-def s3_presigned_url(s3, bucket_name: str, object_name: str, expiration: int = 3600) -> str:
-    """
-    Generate a presigned URL for an S3 object.
-    :param s3: boto3 S3 client
-    :param bucket_name: S3 bucket name
-    :param object_name: S3 object key
-    :param expiration: Time in seconds for the presigned URL to remain valid
-    :return: Presigned URL as a string
-    """
-    try:
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": bucket_name, "Key": object_name},
-            ExpiresIn=expiration,
-        )
-        return url
-    except Exception as e:
-        print(f"Error generating presigned URL for {object_name}: {e}")
-        return ""
-    
-
-# DynamoDB functions removed - now using Core Data instead
 
 
 def polly_generate_audio(session, text: str, voice_id: str, engine: str = "standard", output_format: str = "mp3", file_path: str = "/tmp/polly_output.mp3") -> bool:
