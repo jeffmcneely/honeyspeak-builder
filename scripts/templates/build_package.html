@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Build Package</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Build Package</h2>
+    <form method="post">
+      <label>Dryrun: <input type="checkbox" name="dryrun"></label><br>
+      <label>Verbosity:
+        <select name="verbosity">
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </label><br>
+      <label>Output Dir: <input type="text" name="outdir" value="{{ outdir }}"></label><br>
+      <button type="submit">Start Build</button>
+    </form>
+    <a href="/">Back</a>
+  </div>
+</body>
+</html>

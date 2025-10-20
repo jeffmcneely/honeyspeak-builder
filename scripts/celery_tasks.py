@@ -1,0 +1,520 @@
+"""
+Celery tasks for honeyspeak-builder.
+All tasks are granular and write to structured log files.
+"""
+
+import os
+import sys
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+from celery import Celery, Task
+from celery.utils.log import get_task_logger
+from datetime import datetime
+
+# Add scripts directory to path so we can import libs
+script_dir = Path(__file__).parent
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
+
+# Import from libs directory
+from libs.dictionary_ops import (
+    fetch_word_from_api,
+    process_api_entry,
+    increment_api_usage,
+    get_word_count
+)
+from libs.asset_ops import (
+    generate_word_audio,
+    generate_definition_audio,
+    generate_definition_image
+)
+from libs.package_ops import (
+    encode_audio_file,
+    encode_image_file,
+    add_file_to_package,
+    store_asset_metadata,
+    clean_packages,
+    delete_all_assets
+)
+from libs.sqlite_dictionary import SQLiteDictionary
+
+# Setup logging directory
+LOGS_DIR = Path(__file__).parent.parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
+logger = get_task_logger(__name__)
+
+
+class LoggingTask(Task):
+    """Base task class that adds file logging."""
+    
+    def __call__(self, *args, **kwargs):
+        # Setup task-specific log file
+        task_name = self.name.split('.')[-1]
+        log_file = LOGS_DIR / f"{task_name}_{datetime.now().strftime('%Y%m%d')}.log"
+        
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        )
+        logger.addHandler(file_handler)
+        
+        try:
+            return super().__call__(*args, **kwargs)
+        finally:
+            logger.removeHandler(file_handler)
+
+
+# Initialize Celery app
+app = Celery(
+    "honeyspeak_tasks",
+    broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
+)
+
+app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    task_track_started=True,
+)
+
+
+# ===== Dictionary Tasks =====
+
+@app.task(base=LoggingTask, bind=True)
+def fetch_and_process_word(
+    self,
+    word: str,
+    db_path: str,
+    api_key: str,
+    usage_file: str = "api_usage.txt"
+) -> Dict:
+    """
+    Fetch a word from the dictionary API and process all entries.
+    
+    Args:
+        word: Word to fetch
+        db_path: Path to SQLite database
+        api_key: Dictionary API key
+        usage_file: API usage tracking file
+        
+    Returns:
+        Dict with processing results
+    """
+    logger.info(f"Fetching word: {word}")
+    
+    data = fetch_word_from_api(word, api_key)
+    if not data:
+        logger.error(f"Failed to fetch word: {word}")
+        return {"status": "error", "word": word, "error": "API fetch failed"}
+    
+    # Increment API usage
+    new_count = increment_api_usage(usage_file)
+    logger.info(f"API usage count: {new_count}")
+    
+    # Process each entry
+    results = []
+    for entry in data:
+        if isinstance(entry, dict):
+            success, message = process_api_entry(entry, db_path)
+            results.append({"success": success, "message": message})
+            logger.info(f"Entry result: {message}")
+    
+    success_count = sum(1 for r in results if r["success"])
+    
+    return {
+        "status": "success",
+        "word": word,
+        "entries_processed": len(results),
+        "entries_success": success_count,
+        "api_usage": new_count,
+        "results": results
+    }
+
+
+@app.task(base=LoggingTask, bind=True)
+def process_wordlist(
+    self,
+    wordlist: List[str],
+    db_path: str,
+    api_key: str
+) -> Dict:
+    """
+    Process a list of words.
+    
+    Args:
+        wordlist: List of words to process
+        db_path: Path to SQLite database
+        api_key: Dictionary API key
+        
+    Returns:
+        Dict with overall results
+    """
+    logger.info(f"Processing {len(wordlist)} words")
+    
+    results = []
+    for i, word in enumerate(wordlist):
+        logger.info(f"Progress: {i+1}/{len(wordlist)} - {word}")
+        result = fetch_and_process_word(word, db_path, api_key)
+        results.append(result)
+        
+        # Update task progress
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': i+1, 'total': len(wordlist), 'word': word}
+        )
+    
+    total_count = get_word_count(db_path)
+    
+    return {
+        "status": "success",
+        "words_processed": len(wordlist),
+        "total_words_in_db": total_count,
+        "results": results
+    }
+
+
+# ===== Asset Generation Tasks =====
+
+@app.task(base=LoggingTask, bind=True)
+def generate_word_audio_task(
+    self,
+    word: str,
+    uuid: str,
+    output_dir: str,
+    audio_model: str = "gpt-4o-mini-tts",
+    audio_voice: str = "alloy"
+) -> Dict:
+    """Generate audio for a word."""
+    logger.info(f"Generating word audio: {word} ({uuid})")
+    result = generate_word_audio(word, uuid, output_dir, audio_model, audio_voice)
+    logger.info(f"Word audio result: {result['status']}")
+    return result
+
+
+@app.task(base=LoggingTask, bind=True)
+def generate_definition_audio_task(
+    self,
+    definition: str,
+    uuid: str,
+    def_id: int,
+    output_dir: str,
+    audio_model: str = "gpt-4o-mini-tts",
+    audio_voice: str = "alloy"
+) -> Dict:
+    """Generate audio for a definition."""
+    logger.info(f"Generating definition audio: {uuid}_{def_id}")
+    result = generate_definition_audio(definition, uuid, def_id, output_dir, audio_model, audio_voice)
+    logger.info(f"Definition audio result: {result['status']}")
+    return result
+
+
+@app.task(base=LoggingTask, bind=True)
+def generate_definition_image_task(
+    self,
+    definition: str,
+    uuid: str,
+    def_id: int,
+    output_dir: str,
+    image_model: str = "gpt-image-1",
+    image_size: str = "vertical"
+) -> Dict:
+    """Generate image for a definition."""
+    logger.info(f"Generating definition image: {uuid}_{def_id}")
+    result = generate_definition_image(definition, uuid, def_id, output_dir, image_model, image_size)
+    logger.info(f"Definition image result: {result['status']}")
+    return result
+
+
+@app.task(base=LoggingTask, bind=True)
+def generate_assets_for_word(
+    self,
+    word: str,
+    uuid: str,
+    db_path: str,
+    output_dir: str,
+    generate_audio: bool = True,
+    generate_images: bool = True,
+    audio_model: str = "gpt-4o-mini-tts",
+    audio_voice: str = "alloy",
+    image_model: str = "gpt-image-1",
+    image_size: str = "vertical"
+) -> Dict:
+    """
+    Generate all assets (audio and images) for a word and its definitions.
+    
+    Returns:
+        Dict with generation results
+    """
+    logger.info(f"Generating assets for word: {word} ({uuid})")
+    
+    results = {"word": word, "uuid": uuid, "word_audio": None, "definitions": []}
+    
+    # Generate word audio
+    if generate_audio:
+        results["word_audio"] = generate_word_audio_task(
+            word, uuid, output_dir, audio_model, audio_voice
+        )
+    
+    # Get definitions
+    db = SQLiteDictionary(db_path)
+    definitions = db.get_shortdefs(uuid)
+    db.close()
+    
+    # Generate assets for each definition
+    for defn in definitions:
+        def_results = {"id": defn.id, "audio": None, "image": None}
+        
+        if generate_audio:
+            def_results["audio"] = generate_definition_audio_task(
+                defn.definition, uuid, defn.id, output_dir, audio_model, audio_voice
+            )
+        
+        if generate_images:
+            def_results["image"] = generate_definition_image_task(
+                defn.definition, uuid, defn.id, output_dir, image_model, image_size
+            )
+        
+        results["definitions"].append(def_results)
+    
+    logger.info(f"Completed assets for {word}: {len(definitions)} definitions")
+    return results
+
+
+@app.task(base=LoggingTask, bind=True)
+def generate_all_assets(
+    self,
+    db_path: str,
+    output_dir: str,
+    generate_audio: bool = True,
+    generate_images: bool = True,
+    audio_model: str = "gpt-4o-mini-tts",
+    audio_voice: str = "alloy",
+    image_model: str = "gpt-image-1",
+    image_size: str = "vertical"
+) -> Dict:
+    """
+    Generate all assets for all words in database.
+    
+    Returns:
+        Dict with overall results
+    """
+    logger.info("Starting asset generation for all words")
+    
+    db = SQLiteDictionary(db_path)
+    words = db.get_all_words()
+    db.close()
+    
+    logger.info(f"Processing {len(words)} words")
+    
+    # Create output directory
+    Path(output_dir).mkdir(exist_ok=True, parents=True)
+    
+    results = []
+    for i, word in enumerate(words):
+        logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
+        
+        # Get UUIDs for this word
+        db = SQLiteDictionary(db_path)
+        uuids = db.get_uuids(word.word)
+        db.close()
+        
+        for uuid in uuids:
+            result = generate_assets_for_word(
+                word.word, uuid, db_path, output_dir,
+                generate_audio, generate_images,
+                audio_model, audio_voice, image_model, image_size
+            )
+            results.append(result)
+        
+        # Update task progress
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': i+1, 'total': len(words), 'word': word.word}
+        )
+    
+    logger.info(f"Asset generation complete: {len(results)} word entries processed")
+    
+    return {
+        "status": "success",
+        "words_processed": len(words),
+        "entries_processed": len(results),
+        "output_dir": output_dir
+    }
+
+
+# ===== Packaging Tasks =====
+
+@app.task(base=LoggingTask, bind=True)
+def encode_and_package_audio(
+    self,
+    input_file: str,
+    output_dir: str,
+    package_dir: str,
+    db_path: str,
+    uuid: str,
+    assetgroup: str,
+    sid: int,
+    bitrate: int = 32
+) -> Dict:
+    """
+    Encode an audio file and add it to a package.
+    
+    Returns:
+        Dict with encoding and packaging results
+    """
+    logger.info(f"Encoding and packaging audio: {input_file}")
+    
+    # Encode
+    encode_result = encode_audio_file(input_file, output_dir, bitrate)
+    if encode_result["status"] != "success":
+        return encode_result
+    
+    # Package
+    package_id = add_file_to_package(encode_result["output_file"], package_dir)
+    if not package_id:
+        return {"status": "error", "error": "Failed to add to package"}
+    
+    # Store metadata
+    filename = os.path.basename(encode_result["output_file"])
+    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
+    
+    logger.info(f"Audio packaged: {filename} -> {package_id}")
+    
+    return {
+        "status": "success",
+        "input_file": input_file,
+        "output_file": encode_result["output_file"],
+        "package_id": package_id,
+        "filename": filename
+    }
+
+
+@app.task(base=LoggingTask, bind=True)
+def encode_and_package_image(
+    self,
+    input_file: str,
+    output_dir: str,
+    package_dir: str,
+    db_path: str,
+    uuid: str,
+    assetgroup: str,
+    sid: int,
+    quality: int = 25
+) -> Dict:
+    """
+    Encode an image file and add it to a package.
+    
+    Returns:
+        Dict with encoding and packaging results
+    """
+    logger.info(f"Encoding and packaging image: {input_file}")
+    
+    # Encode
+    encode_result = encode_image_file(input_file, output_dir, quality)
+    if encode_result["status"] != "success":
+        return encode_result
+    
+    # Package
+    package_id = add_file_to_package(encode_result["output_file"], package_dir)
+    if not package_id:
+        return {"status": "error", "error": "Failed to add to package"}
+    
+    # Store metadata
+    filename = os.path.basename(encode_result["output_file"])
+    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
+    
+    logger.info(f"Image packaged: {filename} -> {package_id}")
+    
+    return {
+        "status": "success",
+        "input_file": input_file,
+        "output_file": encode_result["output_file"],
+        "package_id": package_id,
+        "filename": filename
+    }
+
+
+@app.task(base=LoggingTask, bind=True)
+def package_all_assets(
+    self,
+    db_path: str,
+    asset_dir: str,
+    package_dir: str
+) -> Dict:
+    """
+    Package all assets for all words in database.
+    
+    Returns:
+        Dict with packaging results
+    """
+    logger.info("Starting asset packaging")
+    
+    # Clean existing packages and metadata
+    clean_packages(package_dir)
+    delete_all_assets(db_path)
+    
+    db = SQLiteDictionary(db_path)
+    words = db.get_all_words()
+    db.close()
+    
+    logger.info(f"Packaging assets for {len(words)} words")
+    
+    results = []
+    for i, word in enumerate(words):
+        logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
+        
+        # Get definitions
+        db = SQLiteDictionary(db_path)
+        definitions = db.get_shortdefs(word.uuid)
+        db.close()
+        
+        # Package word audio
+        word_audio_file = f"word_{word.uuid}_0.aac"
+        audio_result = encode_and_package_audio(
+            word_audio_file, asset_dir, package_dir, db_path,
+            word.uuid, "word", 0
+        )
+        results.append(audio_result)
+        
+        # Package definition assets
+        for defn in definitions:
+            # Definition audio
+            def_audio_file = f"shortdef_{word.uuid}_{defn.id}.aac"
+            audio_result = encode_and_package_audio(
+                def_audio_file, asset_dir, package_dir, db_path,
+                word.uuid, "shortdef", defn.id
+            )
+            results.append(audio_result)
+            
+            # Definition image
+            def_image_file = f"image_{word.uuid}_{defn.id}.png"
+            image_result = encode_and_package_image(
+                def_image_file, asset_dir, package_dir, db_path,
+                word.uuid, "image", defn.id
+            )
+            results.append(image_result)
+        
+        # Update task progress
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': i+1, 'total': len(words), 'word': word.word}
+        )
+    
+    success_count = sum(1 for r in results if r.get("status") == "success")
+    logger.info(f"Packaging complete: {success_count}/{len(results)} successful")
+    
+    return {
+        "status": "success",
+        "words_processed": len(words),
+        "assets_processed": len(results),
+        "assets_success": success_count
+    }
+
+
+# Expose celery app for CLI
+celery_app = app

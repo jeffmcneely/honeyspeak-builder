@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Logs{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1>📋 Log Files</h1>
+    <p class="text-muted">View task execution logs</p>
+    
+    {% if log_files %}
+    <div class="list-group mt-4">
+        {% for log_file in log_files %}
+        <a href="{{ url_for('view_log', filename=log_file.name) }}" class="list-group-item list-group-item-action">
+            <div class="d-flex w-100 justify-content-between">
+                <h5 class="mb-1">{{ log_file.name }}</h5>
+                <small>{{ log_file.stat().st_size | filesizeformat }}</small>
+            </div>
+            <small class="text-muted">
+                Modified: {{ log_file.stat().st_mtime | timestamp_to_datetime }}
+            </small>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info mt-4">
+        <p class="mb-0">No log files found.</p>
+    </div>
+    {% endif %}
+    
+    <div class="mt-4">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Home</a>
+    </div>
+</div>
+
+<!-- Custom filters for Jinja2 -->
+<script>
+// This template uses custom filters that need to be registered in Flask
+</script>
+{% endblock %}

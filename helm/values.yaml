@@ -1,0 +1,52 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/jeffmcneely/honeyspeak-builder
+  tag: latest
+  pullSecrets: ghcr-secret
+service:
+  type: NodePort
+  port: 5002
+  nodePort: 32003
+
+resources: {}
+
+env:
+  STORAGE_HOME: "/data"
+  STORAGE_DIRECTORY: "/data/honeyspeak"
+  DATABASE_PATH: "/data/honeyspeak/Dictionary.sqlite"
+  ASSET_DIRECTORY: "/data/honeyspeak/assets_hires"
+  PACKAGE_DIRECTORY: "/data/honeyspeak/assets"
+  FLASK_SECRET_KEY: "supersecret"
+  CELERY_BROKER_URL: "redis://redis:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+  DICTIONARY_API_KEY: ""
+  OPENAI_API_KEY: ""
+
+storage:
+  mountPath: "/data"
+  storageDirectory: "honeyspeak"
+  subPaths:
+    database: "Dictionary.sqlite"
+    assets: "assets_hires"
+    packages: "assets"
+
+redis:
+  image: "redis:7-alpine"
+  port: 6379
+
+celery:
+  replicaCount: 1
+  concurrency: 4
+  command: ["celery", "-A", "scripts.celery_tasks.celery_app", "worker", "--loglevel=info"]
+
+pvc:
+  storage: "10Gi"
+  accessMode: "ReadWriteOnce"
+  smb:
+    enabled: false
+    server: ""
+    share: ""
+    username: ""
+    password: ""
+    mountOptions: ["dir_mode=0777","file_mode=0777","uid=1000","gid=1000","vers=3.0"]

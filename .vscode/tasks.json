@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Moderator (Flask)",
+			"type": "shell",
+			"command": ".venv/bin/python",
+			"args": [
+				"scripts/moderator.py"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

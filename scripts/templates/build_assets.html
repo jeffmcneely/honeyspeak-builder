@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Build Assets</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Build Assets</h2>
+    <form method="post">
+      <label>No Audio: <input type="checkbox" name="no_audio"></label><br>
+      <label>Audio Model:
+        <select name="audio_model">
+          {% for m in tts_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </label><br>
+      <label>Audio Voice:
+        <select name="audio_voice">
+          {% for v in voices %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </label><br>
+      <label>No Images: <input type="checkbox" name="no_images"></label><br>
+      <label>Image Model:
+        <select name="image_model">
+          {% for m in image_models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </label><br>
+      <label>Image Size:
+        <select name="image_size">
+          {% for s in image_sizes %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </label><br>
+      <label>Verbosity:
+        <select name="verbosity">
+          <option value="0">0</option>
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+        </select>
+      </label><br>
+      <label>Output Dir: <input type="text" name="outdir" value="{{ outdir }}"></label><br>
+      <label>Dryrun: <input type="checkbox" name="dryrun"></label><br>
+      <label>Enqueue (Celery): <input type="checkbox" name="enqueue"></label><br>
+      <button type="submit">Start Build</button>
+    </form>
+    <a href="/">Back</a>
+  </div>
+</body>
+</html>

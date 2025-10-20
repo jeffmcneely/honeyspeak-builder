@@ -1,5 +1,4 @@
-from libs.sqlite_dictionary import SQLiteDictionary
-
+from libs.sqlite_dictionary import SQLiteDictionary, Flags
 
 from libs.helper import print_json_rich
 import sys
@@ -117,8 +116,8 @@ def main():
 
                 data = response.json()
 
-                if debug:
-                    print_json_rich(data)
+#                if debug:
+#                    print_json_rich(data)
 
                 for entry in data:
                     meta = entry["meta"]
@@ -128,9 +127,9 @@ def main():
                         continue
                     fl = shortdef.get("fl")
                     uuid = meta.get("uuid")
-                    offensive = meta.get("offensive")
+                    flags = parse_flags(entry)
                     try:
-                        db.add_word(word, fl, uuid, offensive)
+                        db.add_word(word, fl, uuid, flags)
                         try:
                             if shortdef == []:
                                 continue
@@ -172,6 +171,49 @@ def main():
     db.close()
     print("=" * 60)
 
+def parse_flags(entry: dict) -> Flags:
+    fl = 0
+    meta = entry.get("meta", {})
+    if meta.get("offensive"):
+        fl |= Flags.OFFENSIVE
+
+    def_list = entry.get("def", [])
+    for def_item in def_list:
+        sseq_list = def_item.get("sseq", [])
+        for sseq_item in sseq_list:
+            # sseq_item is a list of [type, data] pairs
+            for sense_group in sseq_item:
+                if isinstance(sense_group, list) and len(sense_group) == 2 and sense_group[0] == "sense":
+                    sense_data = sense_group[1]
+                    # Check for 'sls' in this sense
+                    sls_list = sense_data.get("sls", [])
+                    for sls_item in sls_list:
+                        text = sls_item.lower()
+                        if "british" in text:
+                            fl |= Flags.BRITISH
+                        if "us" in text or "american" in text or "chiefly us" in text:
+                            fl |= Flags.US
+                        if "old-fashioned" in text or "archaic" in text:
+                            fl |= Flags.OLD_FASHIONED
+                        if "slang" in text:
+                            fl |= Flags.SLANG
+                    # Some senses may have nested 'sdsense' with their own 'sls'
+                    sdsense = sense_data.get("sdsense")
+                    if isinstance(sdsense, dict):
+                        sdsense_sls = sdsense.get("sls", [])
+                        for sls_item in sdsense_sls:
+                            text = sls_item.lower()
+                            if "british" in text:
+                                fl |= Flags.BRITISH
+                            if "us" in text or "american" in text or "chiefly us" in text:
+                                fl |= Flags.US
+                            if "old-fashioned" in text or "archaic" in text:
+                                fl |= Flags.OLD_FASHIONED
+                            if "slang" in text:
+                                fl |= Flags.SLANG
+
+    print(f"entry: {meta.get('id')} flags: {fl}")
+    return Flags.from_int(fl)
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

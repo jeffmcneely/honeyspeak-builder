@@ -4,6 +4,7 @@ botocore>=1.34.0
 requests>=2.31.0
 rich>=13.0.0
 python-dotenv>=1.0.0
+Flask>=3.0.0
 
 # Optional: For database management and visualization
 sqlite-utils>=3.35.0  # Command-line tool for SQLite operations

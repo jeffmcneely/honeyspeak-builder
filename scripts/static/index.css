@@ -1,0 +1,64 @@
+body {
+  background: #000;
+  color: #222;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+.container {
+  max-width: 700px;
+  margin: 40px auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  padding: 32px 28px;
+  border: 2px solid #FFB300;
+}
+h2 {
+  color: #FFB300;
+  margin-top: 0;
+}
+a, button {
+  color: #FFB300;
+  text-decoration: none;
+  font-weight: 500;
+}
+button {
+  background: #FFB300;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+button:hover {
+  background: #e6a000;
+}
+label {
+  display: block;
+  margin: 12px 0 6px 0;
+  color: #222;
+}
+input[type="text"], select {
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid #FFB300;
+  margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+input[type="file"] {
+  margin-bottom: 10px;
+}
+ul {
+  padding-left: 18px;
+}
+pre {
+  background: #222;
+  color: #FFB300;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}

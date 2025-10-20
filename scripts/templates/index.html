@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Honeyspeak Builder</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Honeyspeak Builder Dashboard</h2>
+    <ul>
+      <li><a href="/build_dictionary">Build Dictionary</a></li>
+      <li><a href="/build_assets">Build Assets</a></li>
+      <li><a href="/build_package">Build Package</a></li>
+      <li><a href="/download">Download Results</a></li>
+            <div class="col-md-6">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">📊 Database Statistics</h5>
+            <p class="card-text">View database table statistics and query word details.</p>
+            <a href="/db_stats" class="btn btn-info">View Stats</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">📋 View Logs</h5>
+            <p class="card-text">Browse and view application logs.</p>
+            <a href="/logs" class="btn btn-secondary">View Logs</a>
+          </div>
+        </div>
+      </div>
+    </ul>
+  </div>
+</body>
+</html>

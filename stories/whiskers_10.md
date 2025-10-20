@@ -1,6 +1,11 @@
 # 🐾 Whiskers, Paws, and the Portal in the Pantry
 
+## grouping
+
+Fantasy Adventure
+
 ## style
+
 Style:
 Narrate with a thoughtful, slightly introspective tone—like a well-read storyteller sharing a whimsical yet philosophical tale. The pacing should be moderate, allowing space for reflection and subtle humor.
 Pacing:
@@ -41,9 +46,10 @@ Paws: cheerful, clumsy, innocent
 Oliver: thoughtful, curious, occasionally bewildered
 Magical beings (trees, ice cream king): resonant, theatrical, slightly otherworldly
 
-## story
 Character: Oliver Finch
 Location: Maple Hollow, a quiet town nestled between hills and forests
+
+## story
 
 ### 🌧️ A Rainy Day Surprise
 Oliver Finch loved rainy days. They gave him the perfect excuse to stay inside with his two cats: Whiskers, the clever gray tabby, and Paws, the fluffy orange goofball.

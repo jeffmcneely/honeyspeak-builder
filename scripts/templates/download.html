@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Download Results</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Download Results</h2>
+    <h3>SQLite Databases</h3>
+    <ul>
+      {% for f in db_files %}
+        <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a></li>
+      {% endfor %}
+    </ul>
+    <h3>Package Files</h3>
+    <ul>
+      {% for f in pkg_files %}
+        <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a></li>
+      {% endfor %}
+    </ul>
+    <a href="/">Back</a>
+  </div>
+</body>
+</html>

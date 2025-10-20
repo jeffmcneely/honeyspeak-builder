@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Task Status</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Task Status</h2>
+    <p>Task ID: {{ task_id }}</p>
+    <p>Status: {{ status }}</p>
+    {% if result %}
+      <pre>{{ result }}</pre>
+    {% endif %}
+    <a href="/">Back</a>
+  </div>
+</body>
+</html>

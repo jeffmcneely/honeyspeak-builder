@@ -19,7 +19,7 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 load_dotenv()  # Load .env file if present
 
 
-def encode_audio(file: str, bitrate) -> str:
+def encode_audio(file: str, bitrate) -> str | None:
     """Encode to low-bitrate mono mp3 using ffmpeg"""
 
     raw_path = os.path.join(OUTDIR, f"{file}")
@@ -74,7 +74,7 @@ def encode_audio(file: str, bitrate) -> str:
         raise
 
 
-def encode_image(file: str) -> str:
+def encode_image(file: str) -> str | None:
     """Reduce image resolution by half using ImageMagick"""
     raw_path = os.path.join(OUTDIR, f"{file}")
     base_name = os.path.splitext(file)[0]
@@ -118,7 +118,7 @@ def encode_image(file: str) -> str:
         raise
 
 
-def store_file(filename: str) -> str:
+def store_file(filename: str) -> str | None:
     package_id = 0
     path_re = "low_(?:image|word|shortdef|)_([a-z0-9])"
     match = re.search(path_re, filename)
@@ -216,9 +216,10 @@ def main():
             if not args.dryrun:
                 if filename is not None:
                     package_id = store_file(filename)
-                    db.add_asset(
-                        word.uuid, "image", definition.id, package_id, filename
-                    )
+                    if package_id is not None:
+                        db.add_asset(
+                            word.uuid, "image", definition.id, package_id, filename
+                        )
             if args.verbosity == 2:
                 print(
                     f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id} package_id: {package_id} filename: {filename}"

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: honeyspeak-builder-pvc
+spec:
+  accessModes:
+    - {{ .Values.pvc.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.pvc.smb.enabled }}
+  storageClassName: "" # bind to pre-created PV
+  volumeName: honeyspeak-builder-pv
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.storage | default "1Gi" }}

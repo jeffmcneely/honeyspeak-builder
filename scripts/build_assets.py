@@ -4,12 +4,10 @@ import os
 from pathlib import Path
 import base64
 from openai import OpenAI
-from openai._exceptions import (
-    OpenAIError,
-    APIError,
-    RateLimitError,
-    APITimeoutError,
-    BadRequestError,
+from openai._exceptions import BadRequestError, OpenAIError
+from libs.openai_helpers import (
+    strip_tags, log_400_error, call_openai_audio_streaming, call_openai_audio_non_streaming, call_openai_image,
+    TTS_MODELS, IMAGE_MODELS, VOICES, IMAGE_SIZES, audio_format, image_format
 )
 from libs.sqlite_dictionary import SQLiteDictionary
 from rich.progress import Progress, track
@@ -36,120 +34,9 @@ app.conf.update(
     enable_utc=True,
 )
 
-
-# Models supported by audio/speech endpoint
-TTS_MODELS = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]  # per docs
-IMAGE_MODELS = ["all-e-2", "dall-e-3", "gpt-image-1"]
-# Built-in voices per docs
-VOICES = [
-    "alloy",
-    "ash",
-    "ballad",
-    "coral",
-    "echo",
-    "fable",
-    "onyx",
-    "nova",
-    "sage",
-    "shimmer",
-    "verse",
-]
-IMAGE_SIZES = ["square", "vertical", "horizontal"]
-
-audio_format = "aac"
-image_format = "png"
-
-
-def log_400_error(error: BadRequestError, text: str, context: str) -> None:
-    """
-    Log 400 Bad Request errors from OpenAI API to errors.txt file.
-
-    Args:
-        error: The BadRequestError exception
-        text: The text/prompt that caused the error
-        context: Context information (e.g., 'audio', 'image')
-    """
-    error_file = Path("errors.txt")
-
-    timestamp = datetime.now().isoformat()
-    error_message = str(error)
-
-    # Try to extract the error message from the response if available
-    error_details = ""
-    if hasattr(error, "response") and error.response is not None:
-        try:
-            response_json = error.response.json()
-            if "error" in response_json and "message" in response_json["error"]:
-                error_details = response_json["error"]["message"]
-        except:
-            pass
-
     # Build log entry
-    log_entry = f"""
-{'='*80}
-Timestamp: {timestamp}
-Context: {context}
-Status Code: 400
-Error Message: {error_details or error_message}
-Input Text: {text}
-{'='*80}
-
-"""
-
-    # Append to errors.txt
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(log_entry)
 
 
-def strip_tags(text: str) -> str:
-    """
-    Remove anything between curly braces {} including the braces themselves.
-    """
-    return re.sub(r"\{.*?\}", "", text)
-
-
-def _call_openai_audio_streaming(
-    client: OpenAI, audio_model: str, audio_voice: str, text: str, fname: str
-) -> None:
-    """
-    Call OpenAI audio API with streaming response and retry logic.
-    Raises exception if all retries fail.
-    """
-    with client.audio.speech.with_streaming_response.create(
-        model=audio_model,
-        voice=audio_voice,
-        input=text,
-        response_format=audio_format,
-    ) as resp:
-        resp.stream_to_file(str(fname))
-
-
-def _call_openai_audio_non_streaming(
-    client: OpenAI, audio_model: str, audio_voice: str, text: str
-) -> bytes:
-    """
-    Call OpenAI audio API without streaming and retry logic.
-    Returns audio bytes. Raises exception if all retries fail.
-    """
-    resp = client.audio.speech.create(
-        model=audio_model,
-        voice=audio_voice,
-        input=text,
-        response_format=audio_format,
-    )
-    return resp.read() if hasattr(resp, "read") else resp.content
-
-
-def _call_openai_image(client: OpenAI, image_model: str, prompt: str, size: str):
-    """
-    Call OpenAI images API with retry logic.
-    Returns API result. Raises exception if all retries fail.
-    """
-    return client.images.generate(
-        model=image_model,
-        prompt=prompt,
-        size=size,
-    )
 
 
 @app.task
@@ -189,7 +76,7 @@ def generate_audio_task(
 
     try:
         # Preferred: streaming writer (efficient for larger outputs)
-        _call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
+        call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
         if verbosity >= 2:
             print(f"[synth] Successfully created: {fname}")
         return {"status": "success", "file": fname}
@@ -204,7 +91,7 @@ def generate_audio_task(
     except Exception as e:
         # Fallback to non-streaming API or models that don't support streaming in current SDK
         try:
-            audio_bytes = _call_openai_audio_non_streaming(
+            audio_bytes = call_openai_audio_non_streaming(
                 client, audio_model, audio_voice, text
             )
             with open(fname, "wb") as f:
@@ -305,7 +192,7 @@ def generate_image_task(
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     try:
-        result = _call_openai_image(client, image_model, prompt, size)
+        result = call_openai_image(client, image_model, prompt, size)
         # OpenAI Images API returns base64 JSON in data[0].b64_json
         b64 = result.data[0].b64_json if hasattr(result.data[0], "b64_json") else None
         if not b64:
@@ -327,7 +214,6 @@ def generate_image_task(
         if verbosity >= 1:
             print(f"[generate_image] OpenAI error: {oe}")
         return {"status": "error", "file": fname, "error": str(oe)}
-
     except Exception as e:
         if verbosity >= 1:
             print(f"[generate_image] {text} Error: {e}")
