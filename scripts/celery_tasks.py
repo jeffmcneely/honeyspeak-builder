@@ -37,7 +37,7 @@ from libs.package_ops import (
     clean_packages,
     delete_all_assets
 )
-from libs.sqlite_dictionary import SQLiteDictionary
+from libs.dictionary import Dictionary
 
 # Setup logging directory
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -106,6 +106,13 @@ def fetch_and_process_word(
         Dict with processing results
     """
     logger.info(f"Fetching word: {word}")
+    logger.info(f"[CELERY DEBUG] Received db_path: {db_path}")
+    try:
+        is_abs = os.path.isabs(db_path) if db_path is not None else False
+    except Exception:
+        is_abs = False
+    logger.info(f"[CELERY DEBUG] db_path is absolute: {is_abs} (db_path set: {db_path is not None})")
+    logger.info(f"[CELERY DEBUG] STORAGE_DIRECTORY env: {os.getenv('STORAGE_DIRECTORY', 'NOT SET')}")
     
     data = fetch_word_from_api(word, api_key)
     if not data:
@@ -191,8 +198,20 @@ def generate_word_audio_task(
 ) -> Dict:
     """Generate audio for a word."""
     logger.info(f"Generating word audio: {word} ({uuid})")
+    logger.info(f"[CELERY DEBUG] Word audio output_dir: {output_dir}")
+    logger.info(f"[CELERY DEBUG] output_dir exists: {os.path.exists(output_dir)}")
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"[CELERY DEBUG] Created/verified output_dir: {os.path.exists(output_dir)}")
+    
     result = generate_word_audio(word, uuid, output_dir, audio_model, audio_voice)
     logger.info(f"Word audio result: {result['status']}")
+    
+    if result.get('file'):
+        logger.info(f"[CELERY DEBUG] Generated file: {result['file']}")
+        logger.info(f"[CELERY DEBUG] File exists: {os.path.exists(result['file'])}")
+    
     return result
 
 
@@ -251,6 +270,9 @@ def generate_assets_for_word(
         Dict with generation results
     """
     logger.info(f"Generating assets for word: {word} ({uuid})")
+    logger.info(f"[CELERY DEBUG] Asset output_dir: {output_dir}")
+    logger.info(f"[CELERY DEBUG] output_dir is absolute: {os.path.isabs(output_dir)}")
+    logger.info(f"[CELERY DEBUG] output_dir exists: {os.path.exists(output_dir)}")
     
     results = {"word": word, "uuid": uuid, "word_audio": None, "definitions": []}
     
@@ -261,7 +283,7 @@ def generate_assets_for_word(
         )
     
     # Get definitions
-    db = SQLiteDictionary(db_path)
+    db = Dictionary(db_path)
     definitions = db.get_shortdefs(uuid)
     db.close()
     
@@ -305,21 +327,25 @@ def generate_all_assets(
     """
     logger.info("Starting asset generation for all words")
     
-    db = SQLiteDictionary(db_path)
+    db = Dictionary(db_path)
     words = db.get_all_words()
     db.close()
     
     logger.info(f"Processing {len(words)} words")
     
     # Create output directory
+    logger.info(f"[CELERY DEBUG] Creating output directory: {output_dir}")
+    logger.info(f"[CELERY DEBUG] output_dir is absolute: {os.path.isabs(output_dir)}")
     Path(output_dir).mkdir(exist_ok=True, parents=True)
+    logger.info(f"[CELERY DEBUG] Output directory exists: {Path(output_dir).exists()}")
+    logger.info(f"[CELERY DEBUG] Absolute output path: {Path(output_dir).resolve()}")
     
     results = []
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
         
         # Get UUIDs for this word
-        db = SQLiteDictionary(db_path)
+        db = Dictionary(db_path)
         uuids = db.get_uuids(word.word)
         db.close()
         
@@ -454,11 +480,41 @@ def package_all_assets(
     """
     logger.info("Starting asset packaging")
     
-    # Clean existing packages and metadata
+    # Determine packaging SQLite DB path. If a PostgreSQL connection is
+    # configured, convert Postgres -> SQLite for packaging so assets are
+    # always written into a SQLite database.
+    postgres_conn = os.getenv("POSTGRES_CONNECTION")
+    packaging_db_path = None
+
+    if postgres_conn:
+        # Prefer an explicit sqlite path if provided, otherwise use local 'Dictionary.sqlite'
+        if db_path and str(db_path).lower().endswith('.sqlite'):
+            packaging_db_path = db_path
+        else:
+            packaging_db_path = os.path.join(os.getcwd(), "Dictionary.sqlite")
+
+        logger.info(f"Postgres detected - converting to SQLite for packaging: {packaging_db_path}")
+        from scripts.convert_postgres_to_sqlite import convert_database
+
+        ok = convert_database(postgres_conn, packaging_db_path)
+        if not ok:
+            logger.error("Postgres -> SQLite conversion failed, aborting packaging")
+            return {"status": "error", "message": "Postgres->SQLite conversion failed"}
+    else:
+        # No Postgres - ensure we have a sqlite path to operate on
+        if db_path and str(db_path).lower().endswith('.sqlite'):
+            packaging_db_path = db_path
+        else:
+            packaging_db_path = os.environ.get("DATABASE_PATH", "Dictionary.sqlite")
+
+    # Clean existing packages and metadata in the packaging DB
     clean_packages(package_dir)
-    delete_all_assets(db_path)
-    
-    db = SQLiteDictionary(db_path)
+    delete_all_assets(packaging_db_path)
+
+    # Always read words from the packaging SQLite database so asset FK
+    # relations are preserved when we write external_assets.
+    from libs.sqlite_dictionary import SQLiteDictionary
+    db = SQLiteDictionary(packaging_db_path)
     words = db.get_all_words()
     db.close()
     
@@ -467,16 +523,16 @@ def package_all_assets(
     results = []
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
-        
-        # Get definitions
-        db = SQLiteDictionary(db_path)
+
+        # Get definitions from the packaging SQLite DB
+        db = SQLiteDictionary(packaging_db_path)
         definitions = db.get_shortdefs(word.uuid)
         db.close()
-        
+
         # Package word audio
         word_audio_file = f"word_{word.uuid}_0.aac"
         audio_result = encode_and_package_audio(
-            word_audio_file, asset_dir, package_dir, db_path,
+            word_audio_file, asset_dir, package_dir, packaging_db_path,
             word.uuid, "word", 0
         )
         results.append(audio_result)
@@ -486,7 +542,7 @@ def package_all_assets(
             # Definition audio
             def_audio_file = f"shortdef_{word.uuid}_{defn.id}.aac"
             audio_result = encode_and_package_audio(
-                def_audio_file, asset_dir, package_dir, db_path,
+                def_audio_file, asset_dir, package_dir, packaging_db_path,
                 word.uuid, "shortdef", defn.id
             )
             results.append(audio_result)
@@ -494,7 +550,7 @@ def package_all_assets(
             # Definition image
             def_image_file = f"image_{word.uuid}_{defn.id}.png"
             image_result = encode_and_package_image(
-                def_image_file, asset_dir, package_dir, db_path,
+                def_image_file, asset_dir, package_dir, packaging_db_path,
                 word.uuid, "image", defn.id
             )
             results.append(image_result)

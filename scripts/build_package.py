@@ -2,7 +2,7 @@ import os
 import subprocess
 import shutil
 import argparse
-from libs.sqlite_dictionary import SQLiteDictionary
+from libs.dictionary import Dictionary
 from rich.progress import track
 from dotenv import load_dotenv
 from zipfile import ZipFile
@@ -172,7 +172,24 @@ def main():
     OUTDIR = args.outdir
 
     load_dotenv()
-    db = SQLiteDictionary()
+
+    # Packaging must always write to a SQLite database. If POSTGRES_CONNECTION
+    # is configured, convert Postgres -> SQLite first and operate on that file.
+    postgres_conn = os.getenv("POSTGRES_CONNECTION")
+    if postgres_conn:
+        sqlite_path = os.environ.get("DICTIONARY_SQLITE_PATH", "Dictionary.sqlite")
+        print(f"Converting Postgres -> SQLite for packaging: {sqlite_path}")
+        from scripts.convert_postgres_to_sqlite import convert_database
+        ok = convert_database(postgres_conn, sqlite_path)
+        if not ok:
+            print("Conversion failed - aborting packaging")
+            return
+    else:
+        sqlite_path = os.environ.get("DATABASE_PATH", "Dictionary.sqlite")
+
+    # Use SQLiteDictionary so packaging metadata always goes to SQLite
+    from libs.sqlite_dictionary import SQLiteDictionary
+    db = SQLiteDictionary(sqlite_path)
     words = db.get_all_words()
     db.delete_assets()
     clean_packages()
@@ -226,13 +243,40 @@ def main():
                 )
 
     db.close()
+    
+    # Create production.sqlite from Dictionary.sqlite with WAL disabled
+    if not args.dryrun:
+        if args.verbosity >= 1:
+            print("Creating production.sqlite (WAL disabled for iOS deployment)...")
+        
+        try:
+            # Copy Dictionary.sqlite to production.sqlite
+            shutil.copy("Dictionary.sqlite", "production.sqlite")
+            
+            # For production, always use SQLite directly
+            from libs.sqlite_dictionary import SQLiteDictionary
+            # Open with production_mode=True to disable WAL and create clean production DB
+            prod_db = SQLiteDictionary("production.sqlite", production_mode=True)
+            prod_db.close()
+            
+            # Verify production.sqlite has no WAL/SHM files
+            if os.path.exists("production.sqlite-wal"):
+                os.remove("production.sqlite-wal")
+            if os.path.exists("production.sqlite-shm"):
+                os.remove("production.sqlite-shm")
+            
+            if args.verbosity >= 1:
+                print(f"✓ production.sqlite created ({os.path.getsize('production.sqlite')} bytes, no WAL files)")
+        except Exception as e:
+            print(f"Error creating production.sqlite: {e}")
+    
     if not args.dryrun:
         if os.getenv("COPYTO_DIRECTORY","") != "":
             if args.verbosity >= 1:
-                print(f"Copying Dictionary.sqlite to {os.getenv('COPYTO_DIRECTORY')}/database.sqlite")
+                print(f"Copying production.sqlite to {os.getenv('COPYTO_DIRECTORY')}/database.sqlite")
             try:
                 shutil.copyfile(
-                    "Dictionary.sqlite", os.path.join(os.getenv("COPYTO_DIRECTORY"), "database.sqlite")
+                    "production.sqlite", os.path.join(os.getenv("COPYTO_DIRECTORY"), "database.sqlite")
                 )
             except Exception as e:
                 print(

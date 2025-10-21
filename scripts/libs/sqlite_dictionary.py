@@ -184,31 +184,104 @@ class StoryParagraph:
 
 
 class SQLiteDictionary:
-    def __init__(self, db_path: str = "Dictionary.sqlite"):
+    """
+    SQLite dictionary with WAL mode for concurrent access.
+    Each instance has its own connection - do not share connections between threads.
+    """
+    
+    def __init__(self, db_path: str = "Dictionary.sqlite", production_mode: bool = False):
+        """
+        Initialize SQLite connection.
+        
+        Args:
+            db_path: Path to database file
+            production_mode: If True, disables WAL mode (for production.sqlite)
+            
+        Note: Database must already exist. Use /init_database Flask endpoint to create it first.
+        """
+        import os
+        
+        # If db_path is just a filename, prefix with STORAGE_DIRECTORY
+        if not os.path.isabs(db_path) and os.sep not in db_path:
+            storage_dir = os.getenv("STORAGE_DIRECTORY", "/data/honeyspeak")
+            db_path = os.path.join(storage_dir, db_path)
+            print(f"[SQLiteDictionary] Using STORAGE_DIRECTORY: {storage_dir}")
+        
         self.db_path = db_path
-        new_db = not Path(db_path).exists() or Path(db_path).stat().st_size == 0
-        self.connection = sqlite3.connect(self.db_path)
+        self.production_mode = production_mode
+        
+        # Check if database exists
+        if not Path(db_path).exists():
+            print(f"[SQLiteDictionary ERROR] Database does not exist: {db_path}")
+            print(f"[SQLiteDictionary ERROR] Please initialize it first via /init_database endpoint")
+            raise FileNotFoundError(f"Database not found: {db_path}. Initialize it via /init_database endpoint first.")
+        
+        # Open connection to existing database
+        print(f"[SQLiteDictionary] Opening connection to {db_path} (production_mode={production_mode})...")
+        self.connection = sqlite3.connect(
+            self.db_path,
+            timeout=30.0,
+            check_same_thread=False,
+            isolation_level=None  # Autocommit mode - we'll use explicit transactions
+        )
         self.connection.row_factory = sqlite3.Row
-
-        # Disable WAL and SHM files
-        self.connection.execute("PRAGMA journal_mode=DELETE")
-
-        # Enable foreign key constraints for CASCADE DELETE
-        self.connection.execute("PRAGMA foreign_keys=ON")
-
-        if new_db:
-            self._create_tables()
-
-    def _create_tables(self) -> None:
-        cursor = self.connection.cursor()
-        for stmt in SQLITE_SCHEMA:
+        
+        # Set connection-level pragmas
+        self.connection.execute("PRAGMA busy_timeout = 30000")
+        self.connection.execute("PRAGMA foreign_keys = ON")
+        
+        # Check if we're on a network filesystem (SMB/NFS) by checking the path
+        is_network_fs = str(db_path).startswith('/data/') or str(db_path).startswith('/mnt/')
+        
+        # If production mode, convert to DELETE journal mode
+        if production_mode:
+            print(f"[SQLiteDictionary] Converting to production mode (no WAL)...")
+            self.connection.execute("PRAGMA journal_mode = DELETE")
+            self.connection.execute("PRAGMA synchronous = FULL")
+        elif is_network_fs:
+            # Network filesystem detected - don't try to change journal mode
             try:
-                cursor.execute(stmt)
+                result = self.connection.execute("PRAGMA journal_mode").fetchone()
+                current_mode = result[0] if result else "unknown"
+                print(f"[SQLiteDictionary] Network FS detected - using existing journal mode: {current_mode}")
+                # Don't try to change it - just use what's there
             except Exception as e:
-                print(f"unable to execute statement '{stmt}'\n{e}")
+                print(f"[SQLiteDictionary WARNING] Could not check journal mode: {e}")
+        else:
+            # Try to ensure WAL mode for development on local filesystem
+            try:
+                result = self.connection.execute("PRAGMA journal_mode").fetchone()
+                current_mode = result[0] if result else "unknown"
+                print(f"[SQLiteDictionary] Current journal mode: {current_mode}")
+                
+                if current_mode.upper() != 'WAL':
+                    print(f"[SQLiteDictionary] Attempting to set WAL mode...")
+                    result = self.connection.execute("PRAGMA journal_mode = WAL").fetchone()
+                    if result and result[0].upper() == 'WAL':
+                        print(f"[SQLiteDictionary] Successfully enabled WAL mode")
+                    else:
+                        print(f"[SQLiteDictionary WARNING] Could not enable WAL mode, using {result[0] if result else 'DELETE'} mode")
+            except Exception as wal_e:
+                print(f"[SQLiteDictionary WARNING] Journal mode check/set failed: {wal_e}")
+        
+        print(f"[SQLiteDictionary] Ready (mode={'production' if production_mode else 'development'})")
+    
+    def begin_immediate(self):
+        """Start a write transaction with immediate lock."""
+        self.connection.execute("BEGIN IMMEDIATE")
+    
+    def commit(self):
+        """Commit current transaction."""
         self.connection.commit()
+    
+    def rollback(self):
+        """Rollback current transaction."""
+        try:
+            self.connection.rollback()
+        except:
+            pass
 
-        # CRUD for words
+    # CRUD for words
 
     def add_word(
         self,
@@ -282,6 +355,42 @@ class SQLiteDictionary:
         except Exception as e:
             print(f"[get_word_count] Exception: {e}")
             return 0
+
+    def get_asset_count(self) -> int:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM external_assets")
+            row = cursor.fetchone()
+            return row["count"] if row else 0
+        except Exception as e:
+            print(f"[get_asset_count] Exception: {e}")
+            return 0
+
+    def get_asset_count_by_group(self) -> dict:
+        """Return counts grouped by assetgroup (e.g., 'word', 'shortdef', 'image')."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT assetgroup, COUNT(*) as count FROM external_assets GROUP BY assetgroup"
+            )
+            rows = cursor.fetchall()
+            return {row["assetgroup"]: row["count"] for row in rows}
+        except Exception as e:
+            print(f"[get_asset_count_by_group] Exception: {e}")
+            return {}
+
+    def get_asset_count_by_package(self) -> dict:
+        """Return counts grouped by package id (the 'package' column in external_assets)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT package, COUNT(*) as count FROM external_assets GROUP BY package"
+            )
+            rows = cursor.fetchall()
+            return {row["package"]: row["count"] for row in rows}
+        except Exception as e:
+            print(f"[get_asset_count_by_package] Exception: {e}")
+            return {}
 
     def get_random_word(self) -> Optional[Word]:
         try:

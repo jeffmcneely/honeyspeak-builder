@@ -54,6 +54,12 @@ spec:
           value: {{ .Values.env.DICTIONARY_API_KEY | default "" | quote }}
         - name: OPENAI_API_KEY
           value: {{ .Values.env.OPENAI_API_KEY | default "" | quote }}
+        - name: COMFYUI_SERVER
+          value: {{ .Values.env.COMFYUI_SERVER | default "" | quote }}
+        - name: POSTGRES_CONNECTION
+          value: {{ .Values.env.POSTGRES_CONNECTION | default "" | quote }}
+        - name: POSTGRES_CONN
+          value: {{ .Values.env.POSTGRES_CONN | default .Values.env.POSTGRES_CONNECTION | default "" | quote }}
         volumeMounts:
         - name: data
           mountPath: {{ .Values.storage.mountPath | default "/data" }}

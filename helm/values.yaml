@@ -22,6 +22,14 @@ env:
   CELERY_RESULT_BACKEND: "redis://redis:6379/0"
   DICTIONARY_API_KEY: ""
   OPENAI_API_KEY: ""
+  # ComfyUI server endpoint (full URL). If set, the 'sdxl_turbo' image model
+  # will POST payloads (libs/image-sdxl_turbo.json) to this URL.
+  COMFYUI_SERVER: ""
+  # PostgreSQL connection string. Set this to enable the PostgreSQL backend.
+  # The application reads POSTGRES_CONNECTION; POSTGRES_CONN is provided
+  # as an alias for backwards compatibility.
+  POSTGRES_CONNECTION: ""
+  POSTGRES_CONN: ""
 
 storage:
   mountPath: "/data"

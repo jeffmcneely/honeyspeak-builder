@@ -5,6 +5,9 @@ All functions are designed to be called from Celery tasks.
 
 import os
 import base64
+import json
+import secrets
+import requests
 import logging
 from typing import Optional, Dict
 from openai import OpenAI
@@ -196,17 +199,82 @@ def generate_definition_image(
     
     logger.info(f"Generating image for {fname} (size={size}, model={image_model})")
     
+    # Special-case: send to ComfyUI server for the 'sdxl_turbo' workflow
+    if image_model == "sdxl_turbo":
+        comfy_server = os.getenv("COMFYUI_SERVER")
+        if not comfy_server:
+            logger.error("COMFYUI_SERVER not configured; cannot use sdxl_turbo model")
+            return {"status": "error", "file": None, "error": "COMFYUI_SERVER not configured"}
+
+        # Load the ComfyUI workflow payload and inject the prompt
+        try:
+            cfg_path = os.path.join(os.path.dirname(__file__), "image-sdxl_turbo.json")
+            with open(cfg_path, "r") as fh:
+                payload = json.load(fh)
+
+            # If payload supplies a prompt_template, use it; otherwise try to
+            # inject into nodes that have 'inputs' -> 'text'.
+            payload["6"]["inputs"]["text"] = text + payload["6"]["inputs"]["text"]
+            payload["13"]["inputs"]["noise_seed"] = secrets.randbits(64)
+            if isinstance(payload, dict) and payload.get("prompt_template"):
+                payload["prompt"] = payload["prompt_template"].format(prompt=prompt)
+            else:
+                # Walk through nodes and replace text inputs where present
+                nodes = payload.get("nodes") if isinstance(payload, dict) else None
+                if nodes and isinstance(nodes, dict):
+                    for node in nodes.values():
+                        try:
+                            if isinstance(node, dict) and "inputs" in node and "text" in node["inputs"]:
+                                node["inputs"]["text"] = prompt
+                        except Exception:
+                            continue
+
+            # POST payload to COMFYUI_SERVER (COMFYUI_SERVER should be a full URL)
+            logger.info(f"Posting sdxl_turbo payload to ComfyUI at {comfy_server}")
+            resp = requests.post(comfy_server, json=payload, timeout=60)
+            if not resp.ok:
+                logger.error(f"ComfyUI server returned HTTP {resp.status_code}: {resp.text}")
+                return {"status": "error", "file": None, "error": f"ComfyUI HTTP {resp.status_code}"}
+
+            # If JSON response contains base64 images (common shape: {'images': ['...base64...']})
+            try:
+                data = resp.json()
+                if isinstance(data, dict) and data.get("images") and isinstance(data["images"], list):
+                    b64 = data["images"][0]
+                    with open(fname, "wb") as f:
+                        f.write(base64.b64decode(b64))
+                    logger.info(f"Saved image from ComfyUI to: {fname}")
+                    return {"status": "success", "file": fname}
+            except Exception:
+                # Not JSON / not a JSON image response; fall back to binary
+                pass
+
+            # If response is binary image data
+            ctype = resp.headers.get("Content-Type", "")
+            if ctype.startswith("image/"):
+                with open(fname, "wb") as f:
+                    f.write(resp.content)
+                logger.info(f"Saved binary image from ComfyUI to: {fname}")
+                return {"status": "success", "file": fname}
+
+            # Unknown response
+            logger.error(f"Unknown ComfyUI response: {resp.status_code} {resp.headers.get('Content-Type')}")
+            return {"status": "error", "file": None, "error": "Unknown ComfyUI response"}
+        except Exception as e:
+            logger.error(f"Error calling ComfyUI for {fname}: {e}")
+            return {"status": "error", "file": None, "error": str(e)}
+
+    # Default: use OpenAI image API
     client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-    
     try:
         result = call_openai_image(client, image_model, prompt, size)
         b64 = result.data[0].b64_json if hasattr(result.data[0], "b64_json") else None
         if not b64:
             raise ValueError("No image data returned from API")
-        
+
         with open(fname, "wb") as f:
             f.write(base64.b64decode(b64))
-        
+
         logger.info(f"Successfully created image: {fname}")
         return {"status": "success", "file": fname}
     except BadRequestError as bre:

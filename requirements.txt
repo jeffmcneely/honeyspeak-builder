@@ -29,3 +29,6 @@ typing_extensions>=4.15.0
 celery>=5.3.6
 redis>=5.0.4
 tenacity>=8.2.0
+
+# PostgreSQL support
+psycopg2-binary>=2.9.0

@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Database Management</h1>
+
+<div class="row">
+    <div class="col-md-12">
+    <!-- Inline action alerts (populated by JS when using AJAX) -->
+    <div id="db-action-alerts"></div>
+        <!-- Database Status Card -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Database Status</h5>
+                
+                <div class="mb-3">
+                    <strong>Backend:</strong> 
+                    <span class="badge {{ 'bg-primary' if backend == 'PostgreSQL' else 'bg-secondary' }}">
+                        {{ backend }}
+                    </span>
+                </div>
+                
+                {% if backend == 'PostgreSQL' %}
+                <div class="mb-3">
+                    <strong>Connection:</strong>
+                    <span class="badge {{ 'bg-success' if connected else 'bg-danger' }}">
+                        {{ 'Connected' if connected else 'Not Connected' }}
+                    </span>
+                </div>
+                {% else %}
+                <div class="mb-3">
+                    <strong>Database Path:</strong>
+                    <code>{{ db_path }}</code>
+                    <br>
+                    <strong>Exists:</strong>
+                    <span class="badge {{ 'bg-success' if db_exists else 'bg-warning' }}">
+                        {{ 'Yes' if db_exists else 'No' }}
+                    </span>
+                    {% if db_exists %}
+                    <br>
+                    <strong>Size:</strong> {{ db_size }}
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <strong>Tables:</strong>
+                    {% if tables_exist %}
+                        <span class="badge bg-success">Initialized</span>
+                    {% else %}
+                        <span class="badge bg-warning">Not Initialized</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Actions -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Database Actions</h5>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <form method="POST" action="{{ url_for('database_management') }}" id="db-init-form">
+                            <input type="hidden" name="action" value="init">
+                            <button type="submit" class="btn btn-primary w-100 mb-2" 
+                                    {% if tables_exist %}disabled{% endif %}>
+                                <i class="bi bi-database-add"></i> Initialize Database
+                            </button>
+                        </form>
+                        {% if tables_exist %}
+                        <small class="text-muted">Database is already initialized</small>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <form method="POST" action="{{ url_for('database_management') }}" id="db-reset-form">
+                            <input type="hidden" name="action" value="reset">
+                            <button type="submit" class="btn btn-danger w-100 mb-2">
+                                <i class="bi bi-database-x"></i> Reset Database
+                            </button>
+                        </form>
+                        <small class="text-muted">Warning: This will delete all data</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Statistics -->
+        {% if tables_exist %}
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Database Statistics</h5>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <h3>{{ stats.words }}</h3>
+                            <p>Total Words</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <h3>{{ stats.definitions }}</h3>
+                            <p>Total Definitions</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <h3>{{ stats.assets }}</h3>
+                            <p>Total Assets</p>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if stats.by_package %}
+                <h6 class="mt-4">Assets by Package</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Package</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for package, count in stats.by_package.items() %}
+                            <tr>
+                                <td><code>{{ package }}</code></td>
+                                <td>{{ count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+                
+                {% if stats.by_type %}
+                <h6 class="mt-4">Assets by Type</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for type, count in stats.by_type.items() %}
+                            <tr>
+                                <td><code>{{ type }}</code></td>
+                                <td>{{ count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Word Search -->
+        {% if tables_exist %}
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Word Search</h5>
+                
+                <form method="GET" action="{{ url_for('database_management') }}">
+                    <div class="input-group mb-3">
+                        <input type="text" name="query" class="form-control" 
+                               placeholder="Enter a word to search" 
+                               value="{{ query or '' }}">
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="bi bi-search"></i> Search
+                        </button>
+                    </div>
+                </form>
+                
+                {% if word_data %}
+                <div class="alert alert-success">
+                    <h6>Word: {{ word_data.word }}</h6>
+                    <p><strong>UUID:</strong> <code>{{ word_data.uuid }}</code></p>
+                    <p><strong>Part of Speech:</strong> {{ word_data.fl }}</p>
+                    {% if word_data.flags_list %}
+                    <p><strong>Flags:</strong>
+                        {% for flag in word_data.flags_list %}
+                        <span class="badge bg-secondary me-1">{{ flag }}</span>
+                        {% endfor %}
+                    </p>
+                    {% endif %}
+                    
+                    {% if word_data.definitions %}
+                    <h6>Definitions:</h6>
+                    <ul>
+                        {% for def in word_data.definitions %}
+                        <li>{{ def }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    
+                    {% if word_data.assets %}
+                    <h6>Assets:</h6>
+                    <ul>
+                        {% for asset in word_data.assets %}
+                        <li>
+                            <code>{{ asset.filename }}</code>
+                            ({{ asset.assetgroup }}, package: {{ asset.package or 'none' }})
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+                {% elif query and not word_data %}
+                <div class="alert alert-warning">
+                    No word found matching "{{ query }}"
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.stat-box {
+    text-align: center;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+.stat-box h3 {
+    margin: 0;
+    color: #0d6efd;
+}
+.stat-box p {
+    margin: 5px 0 0 0;
+    color: #6c757d;
+}
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function showInlineAlert(level, message) {
+    const container = document.getElementById('db-action-alerts');
+    container.innerHTML = `<div class="alert alert-${level} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const initForm = document.getElementById('db-init-form');
+    const resetForm = document.getElementById('db-reset-form');
+
+    if (initForm) {
+        initForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const btn = initForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            const orig = btn.innerHTML;
+            btn.innerHTML = 'Initializing...';
+
+            fetch('/init_database', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(async (res) => {
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || (data && data.status === 'error')) {
+                        showInlineAlert('danger', data.message || 'Initialization failed');
+                    } else if (data && data.status === 'already_exists') {
+                        showInlineAlert('info', data.message || 'Database already exists');
+                    } else {
+                        showInlineAlert('success', data.message || 'Database initialized');
+                        // Reload after a short delay so the new status shows up
+                        setTimeout(() => window.location.reload(), 800);
+                    }
+                })
+                .catch((err) => {
+                    showInlineAlert('danger', 'Initialization error: ' + err);
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                });
+        });
+    }
+
+    if (resetForm) {
+        resetForm.addEventListener('submit', function (e) {
+            if (!confirm('Are you sure you want to reset the database? This will delete all data!')) {
+                e.preventDefault();
+                return;
+            }
+            e.preventDefault();
+            const btn = resetForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            const orig = btn.innerHTML;
+            btn.innerHTML = 'Resetting...';
+
+            fetch('/reset_database', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(async (res) => {
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || (data && data.status === 'error')) {
+                        showInlineAlert('danger', data.message || 'Reset failed');
+                    } else {
+                        showInlineAlert('success', data.message || 'Database reset completed');
+                        setTimeout(() => window.location.reload(), 800);
+                    }
+                })
+                .catch((err) => {
+                    showInlineAlert('danger', 'Reset error: ' + err);
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                });
+        });
+    }
+});
+</script>
+{% endblock %}

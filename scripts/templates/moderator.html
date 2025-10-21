@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Moderator{% endblock %}
+
+{% block content %}
+  <div class="container mt-3">
+    <h1>Moderator</h1>
+    <p>Review generated definition images and remove any that are inappropriate or incorrect.</p>
+
+    <div class="list-group">
+      {% for r in rows %}
+        <div class="list-group-item">
+          <div class="d-flex w-100 justify-content-between">
+            <h5 class="mb-1">Definition #{{ r.id }}</h5>
+            <small>{{ r.uuid }}</small>
+          </div>
+          <p class="mb-1">{{ r.definition }}</p>
+
+          <div class="images">
+            {% if r.images %}
+              {% for f in r.images %}
+                <div class="imgwrap d-inline-block m-1" data-filename="{{ f }}">
+                  <img class="thumb img-thumbnail" src="{{ url_for('moderator.serve_asset', filename=f) }}" alt="{{ f }}" title="{{ f }}" style="width:120px;height:120px;object-fit:cover;"/>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="empty">No images found</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <script>
+      async function deleteImage(el) {
+        const wrap = el.closest('.imgwrap');
+        if (!wrap) return;
+        const file = wrap.dataset.filename;
+        if (!file) return;
+        try {
+          wrap.classList.add('removing');
+          const resp = await fetch(`/moderator/asset/${encodeURIComponent(file)}`, { method: 'DELETE' });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            console.error('Delete failed', data);
+            wrap.classList.remove('removing');
+            return;
+          }
+          // Remove after transition
+          setTimeout(() => wrap.remove(), 220);
+        } catch (e) {
+          console.error('Error deleting', e);
+          wrap.classList.remove('removing');
+        }
+      }
+
+      document.addEventListener('click', (e) => {
+        const img = e.target.closest('img.thumb');
+        if (img) {
+          e.preventDefault();
+          deleteImage(img);
+        }
+      });
+    </script>
+  </div>
+{% endblock %}

@@ -1,4 +1,5 @@
-from libs.sqlite_dictionary import SQLiteDictionary, Flags
+from libs.dictionary import Dictionary
+from libs.sqlite_dictionary import Flags  # Keep Flags import from sqlite_dictionary
 
 from libs.helper import print_json_rich
 import sys
@@ -33,7 +34,7 @@ def main():
         print("📄 File not found, treating as comma-separated word list")
         wordlist = sys.argv[1].split(",")
         debug = True
-    db = SQLiteDictionary(db_path)
+    db = Dictionary(db_path)
 
     # Get dictionary API key from environment or AWS
     dictionary_api_key = os.getenv("DICTIONARY_API_KEY")

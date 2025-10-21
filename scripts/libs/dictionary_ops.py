@@ -103,7 +103,9 @@ def process_api_entry(entry: dict, db_path: str) -> Tuple[bool, str]:
         Tuple of (success: bool, message: str)
     """
     try:
-        db = SQLiteDictionary(db_path)
+        # Use unified Dictionary backend which auto-selects PostgreSQL or SQLite
+        from libs.dictionary import Dictionary
+        db = Dictionary(db_path)
         
         meta = entry["meta"]
         word = meta.get("id").split(":")[0]
@@ -199,7 +201,9 @@ def get_word_count(db_path: str) -> int:
     Returns:
         Total word count
     """
-    db = SQLiteDictionary(db_path)
+    # Use unified backend so db_path may be None for PostgreSQL setups
+    from libs.dictionary import Dictionary
+    db = Dictionary(db_path)
     count = db.get_word_count()
     db.close()
     return count

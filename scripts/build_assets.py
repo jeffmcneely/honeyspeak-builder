@@ -9,7 +9,7 @@ from libs.openai_helpers import (
     strip_tags, log_400_error, call_openai_audio_streaming, call_openai_audio_non_streaming, call_openai_image,
     TTS_MODELS, IMAGE_MODELS, VOICES, IMAGE_SIZES, audio_format, image_format
 )
-from libs.sqlite_dictionary import SQLiteDictionary
+from libs.dictionary import Dictionary
 from rich.progress import Progress, track
 from dotenv import load_dotenv
 import re
@@ -342,7 +342,7 @@ def main():
     if not args.dryrun:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    db = SQLiteDictionary()
+    db = Dictionary()
     words = db.get_all_words()  # List[str]
 
     if args.verbosity >= 1:

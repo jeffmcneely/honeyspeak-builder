@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     imagemagick \
     redis-server \
+    postgresql-client \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install

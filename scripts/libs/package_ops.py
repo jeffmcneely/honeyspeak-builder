@@ -191,7 +191,14 @@ def store_asset_metadata(
         Dict with 'status' key
     """
     try:
-        db = SQLiteDictionary(db_path)
+        # If db_path points to a SQLite file, always use SQLiteDictionary so
+        # packaging writes to the intended SQLite output.
+        if db_path and str(db_path).lower().endswith('.sqlite'):
+            from libs.sqlite_dictionary import SQLiteDictionary
+            db = SQLiteDictionary(db_path)
+        else:
+            from libs.dictionary import Dictionary
+            db = Dictionary(db_path)
         db.add_asset(uuid, assetgroup, sid, package_id, filename)
         db.close()
         logger.info(f"Stored asset metadata: {uuid}/{assetgroup}/{sid} -> {package_id}/{filename}")
@@ -240,7 +247,12 @@ def delete_all_assets(db_path: str) -> Dict[str, str]:
         Dict with 'status' key
     """
     try:
-        db = SQLiteDictionary(db_path)
+        if db_path and str(db_path).lower().endswith('.sqlite'):
+            from libs.sqlite_dictionary import SQLiteDictionary
+            db = SQLiteDictionary(db_path)
+        else:
+            from libs.dictionary import Dictionary
+            db = Dictionary(db_path)
         db.delete_assets()
         db.close()
         logger.info("Deleted all asset metadata from database")
