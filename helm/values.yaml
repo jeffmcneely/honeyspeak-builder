@@ -25,6 +25,8 @@ env:
   # ComfyUI server endpoint (full URL). If set, the 'sdxl_turbo' image model
   # will POST payloads (libs/image-sdxl_turbo.json) to this URL.
   COMFYUI_SERVER: ""
+  # ComfyUI output folder - mounted directory where ComfyUI saves generated images
+  COMFY_OUTPUT_FOLDER: ""
   # PostgreSQL connection string. Set this to enable the PostgreSQL backend.
   # The application reads POSTGRES_CONNECTION; POSTGRES_CONN is provided
   # as an alias for backwards compatibility.
@@ -38,6 +40,24 @@ storage:
     database: "Dictionary.sqlite"
     assets: "assets_hires"
     packages: "assets"
+  comfy:
+    enabled: false
+    mountPath: "/comfyout"
+    # Options for mounting ComfyUI output directory
+    # Use either hostPath (for local K8s) or NFS
+    hostPath:
+      enabled: false
+      path: ""  # e.g., "/mnt/comfyui/output"
+    nfs:
+      enabled: false
+      server: ""  # e.g., "stryker"
+      path: ""    # e.g., "/path/to/comfyui/output"
+    smb:
+      enabled: false
+      server: ""
+      share: ""
+      username: ""
+      password: ""
 
 redis:
   image: "redis:7-alpine"

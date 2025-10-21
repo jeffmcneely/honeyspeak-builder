@@ -12,10 +12,17 @@
                         <strong>Database Backend:</strong> {{ backend }}
                     </div>
                     
+                    <h5>Processing Limit</h5>
+                    <div class="mb-3">
+                        <label for="limit" class="form-label">Number of Words to Process</label>
+                        <input type="number" class="form-control" name="limit" id="limit" value="0" min="0">
+                        <small class="text-muted">0 = process all words (unlimited). 1 = process only first word, etc.</small>
+                    </div>
+                    
                     <h5>Audio Options</h5>
                     <div class="mb-3">
                         <div class="form-check">
-                            <input type="checkbox" class="form-check-input" name="generate_audio" id="generate_audio" checked>
+                            <input type="checkbox" class="form-check-input" name="generate_audio" id="generate_audio" value="1">
                             <label class="form-check-label" for="generate_audio">
                                 Generate Audio
                             </label>
@@ -44,7 +51,7 @@
                     <h5>Image Options</h5>
                     <div class="mb-3">
                         <div class="form-check">
-                            <input type="checkbox" class="form-check-input" name="generate_images" id="generate_images" checked>
+                            <input type="checkbox" class="form-check-input" name="generate_images" id="generate_images" value="1">
                             <label class="form-check-label" for="generate_images">
                                 Generate Images
                             </label>

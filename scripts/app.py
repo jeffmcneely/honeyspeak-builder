@@ -427,14 +427,22 @@ def build_assets():
     IMAGE_SIZES = ["square", "vertical", "horizontal"]
     
     if request.method == "POST":
-        # Parse options
-        generate_audio = request.form.get("generate_audio", "on") == "on"
-        generate_images = request.form.get("generate_images", "on") == "on"
+        # Parse options - checkboxes only send value if checked
+        generate_audio = request.form.get("generate_audio") == "1"
+        generate_images = request.form.get("generate_images") == "1"
         audio_model = request.form.get("audio_model", "gpt-4o-mini-tts")
         audio_voice = request.form.get("audio_voice", "alloy")
         image_model = request.form.get("image_model", "gpt-image-1")
         image_size = request.form.get("image_size", "vertical")
         output_dir = request.form.get("outdir", ASSET_DIR)
+        
+        # Parse limit (0 = unlimited)
+        try:
+            limit = int(request.form.get("limit", "0"))
+            if limit < 0:
+                limit = 0
+        except (ValueError, TypeError):
+            limit = 0
         
         # Use default database (PostgreSQL or SQLite based on config)
         db_path = None  # Let Dictionary class decide based on environment
@@ -450,10 +458,12 @@ def build_assets():
                 "audio_model": audio_model,
                 "audio_voice": audio_voice,
                 "image_model": image_model,
-                "image_size": image_size
+                "image_size": image_size,
+                "limit": limit
             }
         )
-        flash(f"Assets build started (task id: {task.id})", "info")
+        limit_msg = f" (limited to {limit} word{'s' if limit != 1 else ''})" if limit > 0 else ""
+        flash(f"Assets build started{limit_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
     backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"

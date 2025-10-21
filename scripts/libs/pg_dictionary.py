@@ -246,6 +246,15 @@ class PostgresDictionary:
             (word,)
         )
         return Word.from_row(row) if row else None
+
+    def get_uuids(self, word: str) -> List[str]:
+        """Return a list of UUIDs matching the given word text."""
+        try:
+            rows = self.execute_fetchall("SELECT uuid FROM words WHERE word = %s", (word,))
+            return [r["uuid"] for r in rows]
+        except Exception as e:
+            self.logger.warning(f"[get_uuids] Exception: {e}")
+            return []
     
     def get_shortdefs(self, word_uuid: str) -> List[ShortDef]:
         """Get all short definitions for a word."""

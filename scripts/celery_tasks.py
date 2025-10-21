@@ -317,19 +317,30 @@ def generate_all_assets(
     audio_model: str = "gpt-4o-mini-tts",
     audio_voice: str = "alloy",
     image_model: str = "gpt-image-1",
-    image_size: str = "vertical"
+    image_size: str = "vertical",
+    limit: int = 0
 ) -> Dict:
     """
     Generate all assets for all words in database.
+    
+    Args:
+        limit: Number of words to process (0 = unlimited)
     
     Returns:
         Dict with overall results
     """
     logger.info("Starting asset generation for all words")
+    logger.info(f"Generate audio: {generate_audio}, Generate images: {generate_images}")
     
     db = Dictionary(db_path)
     words = db.get_all_words()
     db.close()
+    
+    # Apply limit if specified
+    total_words = len(words)
+    if limit > 0 and limit < total_words:
+        words = words[:limit]
+        logger.info(f"Limited to {limit} words (total available: {total_words})")
     
     logger.info(f"Processing {len(words)} words")
     

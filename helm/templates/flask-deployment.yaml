@@ -71,6 +71,8 @@ spec:
           value: {{ .Values.env.OPENAI_API_KEY | default "" | quote }}
         - name: COMFYUI_SERVER
           value: {{ .Values.env.COMFYUI_SERVER | default "" | quote }}
+        - name: COMFY_OUTPUT_FOLDER
+          value: {{ .Values.env.COMFY_OUTPUT_FOLDER | default "" | quote }}
         - name: POSTGRES_CONNECTION
           value: {{ .Values.env.POSTGRES_CONNECTION | default "" | quote }}
         - name: POSTGRES_CONN
@@ -78,7 +80,30 @@ spec:
         volumeMounts:
         - name: data
           mountPath: {{ .Values.storage.mountPath | default "/data" }}
+        {{- if .Values.storage.comfy.enabled }}
+        - name: comfy-output
+          mountPath: {{ .Values.storage.comfy.mountPath | default "/comfyout" }}
+        {{- end }}
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: honeyspeak-builder-pvc
+      {{- if .Values.storage.comfy.enabled }}
+      - name: comfy-output
+        {{- if .Values.storage.comfy.hostPath.enabled }}
+        hostPath:
+          path: {{ .Values.storage.comfy.hostPath.path | quote }}
+          type: DirectoryOrCreate
+        {{- else if .Values.storage.comfy.nfs.enabled }}
+        nfs:
+          server: {{ .Values.storage.comfy.nfs.server | quote }}
+          path: {{ .Values.storage.comfy.nfs.path | quote }}
+        {{- else if .Values.storage.comfy.smb.enabled }}
+        csi:
+          driver: smb.csi.k8s.io
+          volumeAttributes:
+            source: "//{{ .Values.storage.comfy.smb.server }}/{{ .Values.storage.comfy.smb.share }}"
+          nodeStageSecretRef:
+            name: comfy-smb-secret
+        {{- end }}
+      {{- end }}

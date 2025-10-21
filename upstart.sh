@@ -267,8 +267,10 @@ EOF
       STORAGE_SHARE=$(grep '^STORAGE_SHARE=' .env 2>/dev/null | cut -d'=' -f2 | xargs)
       STORAGE_USERNAME=$(grep '^STORAGE_USERNAME=' .env 2>/dev/null | cut -d'=' -f2 | xargs)
       STORAGE_PASSWORD=$(grep '^STORAGE_PASSWORD=' .env 2>/dev/null | cut -d'=' -f2 | xargs)
+      HOST_COMFYUI_FOLDER=$(grep '^HOST_COMFYUI_FOLDER=' .env 2>/dev/null | cut -d'=' -f2 | xargs)
+      COMFY_OUTPUT_FOLDER=$(grep '^COMFY_OUTPUT_FOLDER=' .env 2>/dev/null | cut -d'=' -f2 | xargs)
       
-      if [ -n "$STORAGE_MOUNT_PATH" ] || [ -n "$STORAGE_DIRECTORY" ] || [ -n "$STORAGE_SIZE" ] || [ -n "$STORAGE_ACCESS_MODE" ]; then
+      if [ -n "$STORAGE_MOUNT_PATH" ] || [ -n "$STORAGE_DIRECTORY" ] || [ -n "$STORAGE_SIZE" ] || [ -n "$STORAGE_ACCESS_MODE" ] || [ -n "$HOST_COMFYUI_FOLDER" ]; then
         echo "" >> custom-values.yaml
         echo "storage:" >> custom-values.yaml
         if [ -n "$STORAGE_MOUNT_PATH" ]; then
@@ -276,6 +278,20 @@ EOF
         fi
         if [ -n "$STORAGE_DIRECTORY" ]; then
           echo "  storageDirectory: \"$STORAGE_DIRECTORY\"" >> custom-values.yaml
+        fi
+        
+        # Add ComfyUI output folder configuration if set
+        if [ -n "$HOST_COMFYUI_FOLDER" ]; then
+          echo "  comfy:" >> custom-values.yaml
+          echo "    enabled: true" >> custom-values.yaml
+          if [ -n "$COMFY_OUTPUT_FOLDER" ]; then
+            echo "    mountPath: \"$COMFY_OUTPUT_FOLDER\"" >> custom-values.yaml
+          else
+            echo "    mountPath: \"/comfyout\"" >> custom-values.yaml
+          fi
+          echo "    hostPath:" >> custom-values.yaml
+          echo "      enabled: true" >> custom-values.yaml
+          echo "      path: \"$HOST_COMFYUI_FOLDER\"" >> custom-values.yaml
         fi
       fi
       
