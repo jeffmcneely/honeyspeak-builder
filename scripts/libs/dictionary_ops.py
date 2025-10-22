@@ -141,16 +141,20 @@ def process_api_entry(entry: dict, db_path: str) -> Tuple[bool, str]:
         return False, f"Processing error: {e}"
 
 
-def track_api_usage(usage_file: str = "api_usage.txt") -> int:
+def track_api_usage(usage_file: Optional[str] = None) -> int:
     """
     Track and return current API usage count for today.
     
     Args:
-        usage_file: Path to usage tracking file
+        usage_file: Path to usage tracking file (defaults to STORAGE_DIRECTORY/api_usage.txt)
         
     Returns:
         Current usage count for today
     """
+    if usage_file is None:
+        storage_dir = os.getenv("STORAGE_DIRECTORY", ".")
+        usage_file = os.path.join(storage_dir, "api_usage.txt")
+    
     today = datetime.now().date()
     usage_count = 0
     
@@ -168,16 +172,20 @@ def track_api_usage(usage_file: str = "api_usage.txt") -> int:
     return usage_count
 
 
-def increment_api_usage(usage_file: str = "api_usage.txt") -> int:
+def increment_api_usage(usage_file: Optional[str] = None) -> int:
     """
     Increment API usage counter and return new count.
     
     Args:
-        usage_file: Path to usage tracking file
+        usage_file: Path to usage tracking file (defaults to STORAGE_DIRECTORY/api_usage.txt)
         
     Returns:
         New usage count
     """
+    if usage_file is None:
+        storage_dir = os.getenv("STORAGE_DIRECTORY", ".")
+        usage_file = os.path.join(storage_dir, "api_usage.txt")
+    
     today = datetime.now().date()
     current_count = track_api_usage(usage_file)
     new_count = current_count + 1

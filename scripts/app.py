@@ -867,6 +867,96 @@ def database_management():
     # Render template for regular requests
     return render_template("database.html", **response_data)
 
+@app.route("/celery_status")
+def celery_status_page():
+    """Celery queue status page with auto-refresh."""
+    return render_template("celery_status.html")
+
+
+@app.route("/api/celery_status")
+def api_celery_status():
+    """API endpoint for Celery queue status data."""
+    try:
+        # Get Celery inspector
+        inspect = celery.control.inspect()
+        
+        # Get active tasks
+        active_tasks = inspect.active() or {}
+        
+        # Get scheduled tasks
+        scheduled_tasks = inspect.scheduled() or {}
+        
+        # Get reserved tasks
+        reserved_tasks = inspect.reserved() or {}
+        
+        # Get registered tasks
+        registered_tasks = inspect.registered() or {}
+        
+        # Get stats
+        stats = inspect.stats() or {}
+        
+        # Count tasks
+        active_count = sum(len(tasks) for tasks in active_tasks.values())
+        scheduled_count = sum(len(tasks) for tasks in scheduled_tasks.values())
+        reserved_count = sum(len(tasks) for tasks in reserved_tasks.values())
+        
+        # Format active tasks for display
+        formatted_active = []
+        for worker, tasks in active_tasks.items():
+            for task in tasks:
+                formatted_active.append({
+                    "worker": worker,
+                    "name": task.get("name", "unknown"),
+                    "id": task.get("id", "unknown"),
+                    "args": str(task.get("args", [])),
+                    "kwargs": str(task.get("kwargs", {})),
+                    "time_start": task.get("time_start", 0),
+                })
+        
+        # Format scheduled tasks
+        formatted_scheduled = []
+        for worker, tasks in scheduled_tasks.items():
+            for task in tasks:
+                formatted_scheduled.append({
+                    "worker": worker,
+                    "name": task.get("request", {}).get("name", "unknown"),
+                    "id": task.get("request", {}).get("id", "unknown"),
+                    "eta": task.get("eta", "unknown"),
+                })
+        
+        # Get worker info
+        workers = []
+        for worker, worker_stats in stats.items():
+            workers.append({
+                "name": worker,
+                "status": "online",
+                "pool": worker_stats.get("pool", {}).get("implementation", "unknown"),
+                "max_concurrency": worker_stats.get("pool", {}).get("max-concurrency", 0),
+            })
+        
+        return jsonify({
+            "success": True,
+            "workers": workers,
+            "active_count": active_count,
+            "scheduled_count": scheduled_count,
+            "reserved_count": reserved_count,
+            "active_tasks": formatted_active,
+            "scheduled_tasks": formatted_scheduled,
+            "timestamp": __import__("time").time(),
+        })
+    
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "workers": [],
+            "active_count": 0,
+            "scheduled_count": 0,
+            "reserved_count": 0,
+            "active_tasks": [],
+            "scheduled_tasks": [],
+        }), 500
+
 
 # For Celery CLI discovery
 celery_app = celery

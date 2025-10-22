@@ -41,7 +41,8 @@ def main():
 
     # Track API usage separately (not in Core Data database)
     usage_count = 0
-    usage_file = os.getenv("API_USAGE_FILE", "api_usage.txt")
+    storage_directory = os.getenv("STORAGE_DIRECTORY", ".")
+    usage_file = os.getenv("API_USAGE_FILE", os.path.join(storage_directory, "api_usage.txt"))
     today = datetime.now().date()
 
     try:

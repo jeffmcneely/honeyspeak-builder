@@ -361,6 +361,29 @@ class PostgresDictionary:
             result.append((word, definitions))
         return result
     
+    def get_all_definitions_with_words(self, limit: Optional[int] = None) -> List[dict]:
+        """
+        Get all definitions with their word data in a single optimized query.
+        
+        This eliminates the N+1 query problem when iterating through all words
+        and their definitions (e.g., in the moderator page or asset generation).
+        
+        Returns:
+            List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
+        """
+        query = """
+            SELECT 
+                w.uuid, w.word, w.functional_label, w.flags,
+                s.id as def_id, s.definition
+            FROM words w
+            INNER JOIN shortdef s ON w.uuid = s.uuid
+            ORDER BY w.word, s.id
+        """
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        return self.execute_fetchall(query)
+    
     def get_words_needing_assets(self, assetgroup: str, limit: Optional[int] = None) -> List[str]:
         """Get UUIDs of words that don't have a specific asset type."""
         query = """

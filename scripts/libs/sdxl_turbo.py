@@ -15,6 +15,7 @@ import secrets
 import logging
 import time
 from typing import Dict, Optional
+import re
 
 import requests
 
@@ -72,6 +73,7 @@ def generate_image_via_comfy(
     Returns:
         Dict containing 'status' and 'file' keys (and 'error' on failure).
     """
+    prompt = re.sub(r"\{it\}.+?\{/it\}", "", prompt)
     comfy_server = os.getenv("COMFYUI_SERVER")
     if not comfy_server:
         logger.error("COMFYUI_SERVER not configured; cannot use sdxl_turbo model")

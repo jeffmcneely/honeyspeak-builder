@@ -42,23 +42,40 @@ def list_images_for(uuid: str, sid: int, asset_dir: str) -> List[str]:
     return sorted(set(files))
 
 
-def collect_rows(asset_dir: str) -> List[Dict]:
-    """Collect definitions and associated images from the database and assets folder."""
+def collect_rows_with_images(asset_dir: str) -> List[Dict]:
+    """Collect definitions that have images from the database and assets folder."""
     # Import the unified Dictionary factory at runtime to avoid import-time side-effects
     from libs.dictionary import Dictionary
+    from libs.sqlite_dictionary import Flags
 
     db = Dictionary()
     rows: List[Dict] = []
     try:
-        words = db.get_all_words()
-        for w in words:
-            for sd in db.get_shortdefs(w.uuid):
+        # OPTIMIZED: Single query instead of N+1 pattern
+        # Old approach: get_all_words() then loop get_shortdefs(uuid) for each word
+        # New approach: get_all_definitions_with_words() returns everything in one query
+        results = db.get_all_definitions_with_words()
+        
+        for r in results:
+            images = list_images_for(r['uuid'], r['def_id'], asset_dir)
+            # Only include definitions that have images
+            if images:
+                flags = Flags.from_int(r['flags'])
                 rows.append(
                     {
-                        "uuid": sd.uuid,
-                        "id": sd.id,
-                        "definition": sd.definition,
-                        "images": list_images_for(sd.uuid, sd.id, asset_dir),
+                        "uuid": r['uuid'],
+                        "id": r['def_id'],
+                        "word": r['word'],
+                        "functional_label": r['functional_label'],
+                        "flags": {
+                            "offensive": flags.offensive,
+                            "british": flags.british,
+                            "us": flags.us,
+                            "old_fashioned": flags.old_fashioned,
+                            "informal": flags.informal,
+                        },
+                        "definition": r['definition'],
+                        "images": images,
                     }
                 )
     finally:
@@ -71,10 +88,16 @@ def collect_rows(asset_dir: str) -> List[Dict]:
 
 @moderator_bp.route("/")
 def index():
-    # Prefer app config if set, otherwise fall back to env var
+    # Just render the template without data - AJAX will load it
+    return render_template("moderator.html")
+
+
+@moderator_bp.route("/api/definitions")
+def get_definitions():
+    """API endpoint to get all definitions with images via AJAX."""
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
-    rows = collect_rows(asset_dir)
-    return render_template("moderator.html", rows=rows, asset_dir=asset_dir)
+    rows = collect_rows_with_images(asset_dir)
+    return jsonify({"definitions": rows})
 
 
 @moderator_bp.route("/asset/<path:filename>", methods=["GET"])  # serve images from ASSET_DIRECTORY

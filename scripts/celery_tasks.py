@@ -91,7 +91,7 @@ def fetch_and_process_word(
     word: str,
     db_path: str,
     api_key: str,
-    usage_file: str = "api_usage.txt"
+    usage_file: Optional[str] = None
 ) -> Dict:
     """
     Fetch a word from the dictionary API and process all entries.
@@ -100,7 +100,7 @@ def fetch_and_process_word(
         word: Word to fetch
         db_path: Path to SQLite database
         api_key: Dictionary API key
-        usage_file: API usage tracking file
+        usage_file: API usage tracking file (defaults to STORAGE_DIRECTORY/api_usage.txt)
         
     Returns:
         Dict with processing results
