@@ -55,6 +55,7 @@ def poll_comfyui_history(prompt_id, base_url=None) -> dict:
 
 
 def generate_image_via_comfy(
+    word: str,
     prompt: str,
     text: str,
     output_path: str,
@@ -73,7 +74,43 @@ def generate_image_via_comfy(
     Returns:
         Dict containing 'status' and 'file' keys (and 'error' on failure).
     """
-    prompt = re.sub(r"\{it\}.+?\{/it\}", "", prompt)
+    text = re.sub(r"\{b\}.+?\{/b\}", "", text)
+    text = re.sub(r"\{bc\}", "", text)
+    text = re.sub(r"\{inf\}.+?\{/inf\}", "", text)
+    text = re.sub(r"\{it\}.+?\{/it\}", "", text)
+    text = re.sub(r"\{i{ldquo}\}", "", text)
+    text = re.sub(r"\{i{ldquo}\}", "", text)
+    text = re.sub(r"\{sd\}.+?\{/sd\}", "", text)
+    text = re.sub(r"\{sup\}.+?\{/sup\}", "", text)
+
+    # prompt = re.sub(r"\{gloss\}.+?\{/sup\}", "", prompt)
+    # prompt = re.sub(r"\{parahw\}.+?\{/sup\}", "", prompt)
+    # prompt = re.sub(r"\{phrase\}.+?\{/phrase\}", "", prompt)
+    # prompt = re.sub(r"\{qword\}.+?\{/qword\}", "", prompt)
+    # prompt = re.sub(r"\{wi\}.+?\{/wi\}", "", prompt)
+
+    # prompt = re.sub(r"\{dx\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{dx_def\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{dx_ety\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+    # prompt = re.sub(r"\{ma\}.+?\{/wi\}", "", prompt)
+
     comfy_server = os.getenv("COMFYUI_SERVER")
     if not comfy_server:
         logger.error("COMFYUI_SERVER not configured; cannot use sdxl_turbo model")
@@ -87,14 +124,15 @@ def generate_image_via_comfy(
     try:
         with open(cfg_path, "r") as fh:
             payload = json.load(fh)
-
+        safe_text = text.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
+        safe_word = word.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
         # Try best-effort injections depending on template shape.
         try:
             # Some templates use numeric-string node keys like '6' and '13'.
             node6 = payload.get("6") if isinstance(payload, dict) else None
             if isinstance(node6, dict) and isinstance(node6.get("inputs"), dict):
                 existing = node6["inputs"].get("text", "")
-                payload["6"]["inputs"]["text"] = text + existing
+                payload["6"]["inputs"]["text"] = f"{safe_word}. {safe_text}. {existing}"
 
             node13 = payload.get("13") if isinstance(payload, dict) else None
             if isinstance(node13, dict) and isinstance(node13.get("inputs"), dict):

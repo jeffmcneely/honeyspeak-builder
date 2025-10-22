@@ -346,12 +346,16 @@ class SQLiteDictionary:
             print(f"[get_all_words] Exception: {e}")
             return []
 
-    def get_all_definitions_with_words(self, limit: Optional[int] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
         This eliminates the N+1 query problem when iterating through all words
         and their definitions (e.g., in the moderator page or asset generation).
+        
+        Args:
+            limit: Maximum number of rows to return
+            starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
         
         Returns:
             List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
@@ -364,12 +368,24 @@ class SQLiteDictionary:
                     s.id as def_id, s.definition
                 FROM words w
                 INNER JOIN shortdef s ON w.uuid = s.uuid
-                ORDER BY w.word, s.id
             """
+            
+            params = []
+            if starting_letter:
+                if starting_letter == '-':
+                    # Non-alphabetic: use GLOB for SQLite
+                    query += " WHERE LOWER(SUBSTR(w.word, 1, 1)) NOT GLOB '[a-z]'"
+                else:
+                    # Specific letter
+                    query += " WHERE LOWER(SUBSTR(w.word, 1, 1)) = ?"
+                    params.append(starting_letter.lower())
+            
+            query += " ORDER BY w.word, s.id"
+            
             if limit:
                 query += f" LIMIT {limit}"
             
-            cursor.execute(query)
+            cursor.execute(query, params)
             return cursor.fetchall()
         except Exception as e:
             print(f"[get_all_definitions_with_words] Exception: {e}")

@@ -142,6 +142,7 @@ def generate_definition_image(
     uuid: str,
     def_id: int,
     output_dir: str,
+    word: str = "",
     image_model: str = "gpt-image-1",
     image_size: str = "vertical",
     api_key: Optional[str] = None
@@ -154,6 +155,7 @@ def generate_definition_image(
         uuid: Word UUID
         def_id: Definition ID
         output_dir: Output directory path
+        word: The word being defined (optional, for context)
         image_model: OpenAI image model
         image_size: Size specification (square/vertical/horizontal)
         api_key: OpenAI API key
@@ -193,7 +195,7 @@ def generate_definition_image(
     
     prompt = (
         f"Create a clean, high-contrast educational non-offensive {aspect_words} "
-        f"that represents: {text}. No text, centered subject, solid background. "
+        f"that represents: {word}. {text}. No text, centered subject, solid background. "
         f"The image should not be sexual, suggestive, or depict nudity in any form."
     )
     
@@ -205,7 +207,7 @@ def generate_definition_image(
         try:
             from .sdxl_turbo import generate_image_via_comfy
 
-            return generate_image_via_comfy(prompt=prompt, text=text, output_path=fname)
+            return generate_image_via_comfy(word=word,prompt=prompt, text=text, output_path=fname)
         except Exception as e:
             logger.exception("sdxl_turbo helper failed: %s", e)
             return {"status": "error", "file": None, "error": str(e)}

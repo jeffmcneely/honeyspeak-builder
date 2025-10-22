@@ -239,12 +239,13 @@ def generate_definition_image_task(
     uuid: str,
     def_id: int,
     output_dir: str,
+    word: str = "",
     image_model: str = "gpt-image-1",
     image_size: str = "vertical"
 ) -> Dict:
     """Generate image for a definition."""
     logger.info(f"Generating definition image: {uuid}_{def_id}")
-    result = generate_definition_image(definition, uuid, def_id, output_dir, image_model, image_size)
+    result = generate_definition_image(definition, uuid, def_id, output_dir, word, image_model, image_size)
     logger.info(f"Definition image result: {result['status']}")
     return result
 
@@ -298,7 +299,7 @@ def generate_assets_for_word(
         
         if generate_images:
             def_results["image"] = generate_definition_image_task(
-                defn.definition, uuid, defn.id, output_dir, image_model, image_size
+                defn.definition, uuid, defn.id, output_dir, word, image_model, image_size
             )
         
         results["definitions"].append(def_results)

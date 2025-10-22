@@ -361,12 +361,16 @@ class PostgresDictionary:
             result.append((word, definitions))
         return result
     
-    def get_all_definitions_with_words(self, limit: Optional[int] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
         This eliminates the N+1 query problem when iterating through all words
         and their definitions (e.g., in the moderator page or asset generation).
+        
+        Args:
+            limit: Maximum number of rows to return
+            starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
         
         Returns:
             List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
@@ -377,12 +381,24 @@ class PostgresDictionary:
                 s.id as def_id, s.definition
             FROM words w
             INNER JOIN shortdef s ON w.uuid = s.uuid
-            ORDER BY w.word, s.id
         """
+        
+        params = []
+        if starting_letter:
+            if starting_letter == '-':
+                # Non-alphabetic: NOT (a-z or A-Z)
+                query += " WHERE LOWER(SUBSTRING(w.word, 1, 1)) !~ '^[a-z]$'"
+            else:
+                # Specific letter
+                query += " WHERE LOWER(SUBSTRING(w.word, 1, 1)) = %s"
+                params.append(starting_letter.lower())
+        
+        query += " ORDER BY w.word, s.id"
+        
         if limit:
             query += f" LIMIT {limit}"
         
-        return self.execute_fetchall(query)
+        return self.execute_fetchall(query, tuple(params) if params else None)
     
     def get_words_needing_assets(self, assetgroup: str, limit: Optional[int] = None) -> List[str]:
         """Get UUIDs of words that don't have a specific asset type."""

@@ -42,8 +42,13 @@ def list_images_for(uuid: str, sid: int, asset_dir: str) -> List[str]:
     return sorted(set(files))
 
 
-def collect_rows_with_images(asset_dir: str) -> List[Dict]:
-    """Collect definitions that have images from the database and assets folder."""
+def collect_rows_with_images(asset_dir: str, starting_letter: str = None) -> List[Dict]:
+    """Collect definitions that have images from the database and assets folder.
+    
+    Args:
+        asset_dir: Directory containing image assets
+        starting_letter: Filter words by starting letter (case-insensitive). Use '-' for non-alphabetic.
+    """
     # Import the unified Dictionary factory at runtime to avoid import-time side-effects
     from libs.dictionary import Dictionary
     from libs.sqlite_dictionary import Flags
@@ -51,10 +56,9 @@ def collect_rows_with_images(asset_dir: str) -> List[Dict]:
     db = Dictionary()
     rows: List[Dict] = []
     try:
-        # OPTIMIZED: Single query instead of N+1 pattern
-        # Old approach: get_all_words() then loop get_shortdefs(uuid) for each word
-        # New approach: get_all_definitions_with_words() returns everything in one query
-        results = db.get_all_definitions_with_words()
+        # OPTIMIZED: Single query with SQL-level filtering by starting letter
+        # This pushes the letter filter into the database query instead of Python
+        results = db.get_all_definitions_with_words(starting_letter=starting_letter)
         
         for r in results:
             images = list_images_for(r['uuid'], r['def_id'], asset_dir)
@@ -94,9 +98,16 @@ def index():
 
 @moderator_bp.route("/api/definitions")
 def get_definitions():
-    """API endpoint to get all definitions with images via AJAX."""
+    """API endpoint to get definitions with images via AJAX.
+    
+    Query params:
+        letter: Filter by starting letter (a-z or '-' for non-alphabetic)
+    """
+    from flask import request
+    
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
-    rows = collect_rows_with_images(asset_dir)
+    starting_letter = request.args.get("letter", None)
+    rows = collect_rows_with_images(asset_dir, starting_letter)
     return jsonify({"definitions": rows})
 
 
