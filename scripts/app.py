@@ -129,26 +129,26 @@ def build_tests_get_words():
     try:
         db = PostgresDictionary()
         if label == "proper noun":
-            # function_label == 'noun' and first letter capitalized (uppercase)
+            # function_label == 'noun' and first letter capitalized (uppercase), flags == 0
             rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' ORDER BY random() LIMIT %s",
+                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
                 (count,)
             )
         elif label == "noun":
-            # function_label == 'noun' and first letter lowercase, starts with a letter
+            # function_label == 'noun' and first letter lowercase, starts with a letter, flags == 0
             rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' ORDER BY random() LIMIT %s",
+                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' AND flags = 0 ORDER BY random() LIMIT %s",
                 (count,)
             )
         elif label in ["verb", "adjective", "adverb"]:
-            # Exclude words that do not start with a letter
+            # Exclude words that do not start with a letter, flags == 0
             rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' ORDER BY random() LIMIT %s",
+                "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
                 (label, count)
             )
         else:
             rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = %s ORDER BY random() LIMIT %s",
+                "SELECT word FROM words WHERE functional_label = %s AND flags = 0 ORDER BY random() LIMIT %s",
                 (label, count)
             )
         words = [r["word"] for r in rows]
