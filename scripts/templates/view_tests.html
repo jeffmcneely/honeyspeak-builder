@@ -113,7 +113,6 @@ $(function() {
   
   // Delete answer
   $(document).on('click', '.delete-answer', function() {
-    if (!confirm('Delete this answer?')) return;
     const aid = $(this).data('id');
     $.post('/view_tests/delete_answer', { answer_id: aid }, function(data) {
       if (data.success) {
