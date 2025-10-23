@@ -216,31 +216,39 @@ def main():
                 f"add_asset uuid:{word.uuid} assetgroup: word sid: 0 package_id: {package_id} filename: low_{filename}"
             )
         for definition in definitions:
-            filename = encode_audio(f"shortdef_{word.uuid}_{definition.id}.aac", 32)
-            if not args.dryrun:
-                if filename is not None:
-                    package_id = store_file(filename)
-                    if package_id is not None:
-                        db.add_asset(
-                            word.uuid, "shortdef", definition.id, package_id, filename
-                        )
-            if args.verbosity == 2:
-                print(
-                    f"add_asset uuid:{word.uuid} assetgroup: shortdef sid: {definition.id} package_id: {package_id} filename: {filename}"
-                )
+            # Package 2 variants of definition audio (i=0, i=1)
+            for i in range(2):
+                filename = encode_audio(f"shortdef_{word.uuid}_{definition.id}_{i}.aac", 32)
+                if not args.dryrun:
+                    if filename is not None:
+                        package_id = store_file(filename)
+                        if package_id is not None:
+                            # Encode both def_id and variant i into sid: sid = def_id * 100 + i
+                            audio_sid = definition.id * 100 + i
+                            db.add_asset(
+                                word.uuid, "shortdef", audio_sid, package_id, filename
+                            )
+                if args.verbosity == 2:
+                    print(
+                        f"add_asset uuid:{word.uuid} assetgroup: shortdef sid: {definition.id * 100 + i} package_id: {package_id} filename: {filename}"
+                    )
 
-            filename = encode_image(f"image_{word.uuid}_{definition.id}.png")
-            if not args.dryrun:
-                if filename is not None:
-                    package_id = store_file(filename)
-                    if package_id is not None:
-                        db.add_asset(
-                            word.uuid, "image", definition.id, package_id, filename
-                        )
-            if args.verbosity == 2:
-                print(
-                    f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id} package_id: {package_id} filename: {filename}"
-                )
+            # Package 2 variants of definition image (i=0, i=1)
+            for i in range(2):
+                filename = encode_image(f"image_{word.uuid}_{definition.id}_{i}.png")
+                if not args.dryrun:
+                    if filename is not None:
+                        package_id = store_file(filename)
+                        if package_id is not None:
+                            # Encode both def_id and variant i into sid: sid = def_id * 100 + i
+                            image_sid = definition.id * 100 + i
+                            db.add_asset(
+                                word.uuid, "image", image_sid, package_id, filename
+                            )
+                if args.verbosity == 2:
+                    print(
+                        f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id * 100 + i} package_id: {package_id} filename: {filename}"
+                    )
 
     db.close()
     

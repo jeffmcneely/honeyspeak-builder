@@ -19,7 +19,7 @@
   .flag-old { background: #6c757d; }
   .flag-informal { background: #ffc107; color: #000; }
   
-  /* Definition item layout: image on left, content on right */
+  /* Definition item layout: image on left, content in middle, image on right */
   .definition-item {
     display: flex;
     align-items: flex-start;
@@ -32,12 +32,16 @@
     border-bottom: none;
   }
   
-  /* Image container */
+  /* Image containers */
   .image-container {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .image-left, .image-right {
+    width: 144px;
   }
   
   .imgwrap {
@@ -71,6 +75,18 @@
   .definition-content {
     flex-grow: 1;
     min-width: 0;
+  }
+
+  /* Delete buttons stacked vertically */
+  .delete-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: flex-start; /* prevent full-width stretch */
+  }
+  .delete-buttons .btn-delete-image {
+    width: 200px; /* limit button width */
   }
   
   /* Delete button */
@@ -108,9 +124,9 @@
 {% endblock %}
 
 {% block content %}
-  <div class="container mt-3">
+  <div class="container-fluid mt-3">
     <h1>Moderator</h1>
-    <p>Review generated definition images and remove any that are inappropriate or incorrect. Hover over image to expand.</p>
+    <p>Review generated definition images and remove any that are inappropriate or incorrect. Click an image to expand/collapse.</p>
 
     <div class="letter-filter">
       <div class="d-flex align-items-center mb-2">
@@ -240,30 +256,51 @@
         if (def.flags.old_fashioned) flagsHtml += '<span class="flag-icon flag-old" title="Old Fashioned">📜 Old</span>';
         if (def.flags.informal) flagsHtml += '<span class="flag-icon flag-informal" title="Informal">💬 Informal</span>';
         
-        // Build images section (left side)
-        const imagesHtml = def.images.map(filename => `
-          <div class="imgwrap" data-filename="${escapeHtml(filename)}" onclick="toggleImageSize(this)">
-            <img src="/moderator/asset/${encodeURIComponent(filename)}" 
-                 alt="${escapeHtml(filename)}" 
+        // Determine left (_0) and right (_1) images
+        const leftImg = (def.images || []).find(fn => /_0\.(png|jpg|heic)$/i.test(fn));
+        const rightImg = (def.images || []).find(fn => /_1\.(png|jpg|heic)$/i.test(fn));
+
+        const leftHtml = leftImg ? `
+          <div class="imgwrap" data-filename="${escapeHtml(leftImg)}" onclick="toggleImageSize(this)">
+            <img src="/moderator/asset/${encodeURIComponent(leftImg)}" 
+                 alt="${escapeHtml(leftImg)}" 
                  title="Click to expand/collapse"/>
           </div>
-        `).join('');
-        
-        // Build delete buttons for right side
-        const deleteButtonsHtml = def.images.map(filename => `
-          <button class="btn btn-sm btn-danger btn-delete-image mb-2" 
-                  onclick="deleteImage(this)"
-                  data-filename="${escapeHtml(filename)}">
-            Delete ${escapeHtml(filename).substring(0, 20)}...
-          </button>
-        `).join('');
+        ` : '<div class="text-muted small">No _0 image</div>';
+
+        const rightHtml = rightImg ? `
+          <div class="imgwrap" data-filename="${escapeHtml(rightImg)}" onclick="toggleImageSize(this)">
+            <img src="/moderator/asset/${encodeURIComponent(rightImg)}" 
+                 alt="${escapeHtml(rightImg)}" 
+                 title="Click to expand/collapse"/>
+          </div>
+        ` : '<div class="text-muted small">No _1 image</div>';
+
+        // Build delete buttons for middle column
+        let deleteButtonsHtml = '';
+        if (leftImg) {
+          deleteButtonsHtml += `
+            <button class="btn btn-sm btn-primary btn-delete-image" 
+                    onclick="deleteImage(this)"
+                    data-filename="${escapeHtml(leftImg)}">
+              delete left
+            </button>`;
+        }
+        if (rightImg) {
+          deleteButtonsHtml += `
+            <button class="btn btn-sm btn-danger btn-delete-image" 
+                    onclick="deleteImage(this)"
+                    data-filename="${escapeHtml(rightImg)}">
+              delete right
+            </button>`;
+        }
         
         // Build header with word info
         const funcLabel = def.functional_label ? ` <em class="text-muted">(${def.functional_label})</em>` : '';
         
         article.innerHTML = `
-          <aside class="image-container">
-            ${imagesHtml}
+          <aside class="image-container image-left">
+            ${leftHtml}
           </aside>
           <section class="definition-content">
             <header>
@@ -278,6 +315,9 @@
               ${deleteButtonsHtml}
             </div>
           </section>
+          <aside class="image-container image-right">
+            ${rightHtml}
+          </aside>
         `;
         
         return article;

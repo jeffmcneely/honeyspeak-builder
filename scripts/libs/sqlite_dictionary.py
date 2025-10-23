@@ -52,7 +52,32 @@ SQLITE_SCHEMA = [
         PRIMARY KEY(story_uuid, paragraph_index),
         FOREIGN KEY(story_uuid) REFERENCES stories(uuid) ON DELETE CASCADE
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_story_paragraphs_uuid ON story_paragraphs(story_uuid)"""
+    """CREATE INDEX IF NOT EXISTS idx_story_paragraphs_uuid ON story_paragraphs(story_uuid)""",
+    """CREATE TABLE test (
+        id         INTEGER PRIMARY KEY,
+        name       TEXT NOT NULL,
+        version    INTEGER DEFAULT 1,
+        created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE question (
+        id        INTEGER PRIMARY KEY,
+        test_id   INTEGER NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+        prompt    TEXT    NOT NULL,
+        explanation TEXT,
+        flags     INTEGER DEFAULT 0,
+        UNIQUE(test_id, prompt)
+    )""",
+    """CREATE TABLE answer (
+        id          INTEGER PRIMARY KEY,
+        question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
+        body        TEXT    NOT NULL,
+        is_correct  INTEGER NOT NULL CHECK (is_correct IN (0,1)),
+        weight      REAL    DEFAULT 1.0,        -- for sampling if needed
+        UNIQUE(question_id, body)
+    )""",
+    """CREATE INDEX idx_answer_qid           ON answer(question_id)""",
+    """CREATE INDEX idx_answer_qid_correct   ON answer(question_id) WHERE is_correct = 1""",
+    """CREATE INDEX idx_answer_qid_incorrect ON answer(question_id) WHERE is_correct = 0"""
 ]
 
 

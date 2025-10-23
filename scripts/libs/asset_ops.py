@@ -83,6 +83,7 @@ def generate_definition_audio(
     uuid: str,
     def_id: int,
     output_dir: str,
+    i: int = 0,
     audio_model: str = "gpt-4o-mini-tts",
     audio_voice: str = "alloy",
     api_key: Optional[str] = None
@@ -95,6 +96,7 @@ def generate_definition_audio(
         uuid: Word UUID
         def_id: Definition ID
         output_dir: Output directory path
+        i: Variant index (0 or 1)
         audio_model: OpenAI TTS model
         audio_voice: Voice name
         api_key: OpenAI API key
@@ -102,7 +104,7 @@ def generate_definition_audio(
     Returns:
         Dict with 'status' and 'file' keys
     """
-    fname = os.path.join(output_dir, f"shortdef_{uuid}_{def_id}.{audio_format}")
+    fname = os.path.join(output_dir, f"shortdef_{uuid}_{def_id}_{i}.{audio_format}")
     
     if os.path.isfile(fname):
         logger.info(f"Skipping existing file: {fname}")
@@ -143,6 +145,7 @@ def generate_definition_image(
     def_id: int,
     output_dir: str,
     word: str = "",
+    i: int = 0,
     image_model: str = "gpt-image-1",
     image_size: str = "vertical",
     api_key: Optional[str] = None
@@ -156,6 +159,7 @@ def generate_definition_image(
         def_id: Definition ID
         output_dir: Output directory path
         word: The word being defined (optional, for context)
+        i: Variant index (0 or 1)
         image_model: OpenAI image model
         image_size: Size specification (square/vertical/horizontal)
         api_key: OpenAI API key
@@ -163,7 +167,7 @@ def generate_definition_image(
     Returns:
         Dict with 'status' and 'file' keys
     """
-    fname = os.path.join(output_dir, f"image_{uuid}_{def_id}.{image_format}")
+    fname = os.path.join(output_dir, f"image_{uuid}_{def_id}_{i}.{image_format}")
     
     if os.path.isfile(fname):
         logger.info(f"Skipping existing file: {fname}")

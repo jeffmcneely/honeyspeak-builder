@@ -371,35 +371,37 @@ def main():
                     )
                     job_count += 1
 
-                    # Enqueue definition audios
+                    # Enqueue definition audios (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_audio_task.delay(
-                            text=sd.definition,
-                            fname=os.path.join(
-                                args.outdir,
-                                f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                            ),
-                            audio_model=args.audio_model,
-                            audio_voice=args.audio_voice,
-                            verbosity=args.verbosity,
-                            dryrun=args.dryrun,
-                        )
-                        job_count += 1
+                        for i in range(2):
+                            generate_audio_task.delay(
+                                text=sd.definition,
+                                fname=os.path.join(
+                                    args.outdir,
+                                    f"shortdef_{sd.uuid}_{sd.id}_{i}.{audio_format}",
+                                ),
+                                audio_model=args.audio_model,
+                                audio_voice=args.audio_voice,
+                                verbosity=args.verbosity,
+                                dryrun=args.dryrun,
+                            )
+                            job_count += 1
 
                 if not args.no_images:
-                    # Enqueue definition images
+                    # Enqueue definition images (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_image_task.delay(
-                            text=sd.definition,
-                            fname=os.path.join(
-                                args.outdir, f"image_{sd.uuid}_{sd.id}.{image_format}"
-                            ),
-                            image_model=args.image_model,
-                            image_size=args.image_size,
-                            verbosity=args.verbosity,
-                            dryrun=args.dryrun,
-                        )
-                        job_count += 1
+                        for i in range(2):
+                            generate_image_task.delay(
+                                text=sd.definition,
+                                fname=os.path.join(
+                                    args.outdir, f"image_{sd.uuid}_{sd.id}_{i}.{image_format}"
+                                ),
+                                image_model=args.image_model,
+                                image_size=args.image_size,
+                                verbosity=args.verbosity,
+                                dryrun=args.dryrun,
+                            )
+                            job_count += 1
 
         db.close()
         if args.verbosity >= 1:
@@ -451,40 +453,42 @@ def main():
                         )
                         progress.advance(asset_task)
 
-                        # synthesize each short definition for this sense
+                        # synthesize each short definition for this sense (2 variants: i=0, i=1)
                         for i, sd in enumerate(db.get_shortdefs(uuid), 1):
-                            progress.update(
-                                asset_task,
-                                description=f"[green]  └─ {w.word} (audio: def {i})",
-                            )
-                            generate_audio(
-                                client,
-                                sd.definition,
-                                os.path.join(
-                                    args.outdir,
-                                    f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                                ),
-                                args,
-                            )
-                            progress.advance(asset_task)
+                            for variant_i in range(2):
+                                progress.update(
+                                    asset_task,
+                                    description=f"[green]  └─ {w.word} (audio: def {i} variant {variant_i})",
+                                )
+                                generate_audio(
+                                    client,
+                                    sd.definition,
+                                    os.path.join(
+                                        args.outdir,
+                                        f"shortdef_{sd.uuid}_{sd.id}_{variant_i}.{audio_format}",
+                                    ),
+                                    args,
+                                )
+                                progress.advance(asset_task)
 
                     if not args.no_images:
-                        # Images for short definitions
+                        # Images for short definitions (2 variants: i=0, i=1)
                         for i, sd in enumerate(db.get_shortdefs(uuid), 1):
-                            progress.update(
-                                asset_task,
-                                description=f"[green]  └─ {w.word} (image: def {i})",
-                            )
-                            generate_image(
-                                client,
-                                sd.definition,
-                                os.path.join(
-                                    args.outdir,
-                                    f"image_{sd.uuid}_{sd.id}.{image_format}",
-                                ),
-                                args,
-                            )
-                            progress.advance(asset_task)
+                            for variant_i in range(2):
+                                progress.update(
+                                    asset_task,
+                                    description=f"[green]  └─ {w.word} (image: def {i} variant {variant_i})",
+                                )
+                                generate_image(
+                                    client,
+                                    sd.definition,
+                                    os.path.join(
+                                        args.outdir,
+                                        f"image_{sd.uuid}_{sd.id}_{variant_i}.{image_format}",
+                                    ),
+                                    args,
+                                )
+                                progress.advance(asset_task)
 
                 progress.remove_task(asset_task)
                 progress.advance(main_task)
@@ -505,29 +509,31 @@ def main():
                         args,
                     )
 
-                    # synthesize each short definition for this sense
+                    # synthesize each short definition for this sense (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_audio(
-                            client,
-                            sd.definition,
-                            os.path.join(
-                                args.outdir,
-                                f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                            ),
-                            args,
-                        )
+                        for i in range(2):
+                            generate_audio(
+                                client,
+                                sd.definition,
+                                os.path.join(
+                                    args.outdir,
+                                    f"shortdef_{sd.uuid}_{sd.id}_{i}.{audio_format}",
+                                ),
+                                args,
+                            )
 
                 if not args.no_images:
-                    # Images for short definitions
+                    # Images for short definitions (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_image(
-                            client,
-                            sd.definition,
-                            os.path.join(
-                                args.outdir, f"image_{sd.uuid}_{sd.id}.{image_format}"
-                            ),
-                            args,
-                        )
+                        for i in range(2):
+                            generate_image(
+                                client,
+                                sd.definition,
+                                os.path.join(
+                                    args.outdir, f"image_{sd.uuid}_{sd.id}_{i}.{image_format}"
+                                ),
+                                args,
+                            )
 
     db.close()
 

@@ -222,12 +222,13 @@ def generate_definition_audio_task(
     uuid: str,
     def_id: int,
     output_dir: str,
+    i: int = 0,
     audio_model: str = "gpt-4o-mini-tts",
     audio_voice: str = "alloy"
 ) -> Dict:
     """Generate audio for a definition."""
-    logger.info(f"Generating definition audio: {uuid}_{def_id}")
-    result = generate_definition_audio(definition, uuid, def_id, output_dir, audio_model, audio_voice)
+    logger.info(f"Generating definition audio: {uuid}_{def_id}_{i}")
+    result = generate_definition_audio(definition, uuid, def_id, output_dir, i, audio_model, audio_voice)
     logger.info(f"Definition audio result: {result['status']}")
     return result
 
@@ -240,12 +241,13 @@ def generate_definition_image_task(
     def_id: int,
     output_dir: str,
     word: str = "",
+    i: int = 0,
     image_model: str = "gpt-image-1",
     image_size: str = "vertical"
 ) -> Dict:
     """Generate image for a definition."""
-    logger.info(f"Generating definition image: {uuid}_{def_id}")
-    result = generate_definition_image(definition, uuid, def_id, output_dir, word, image_model, image_size)
+    logger.info(f"Generating definition image: {uuid}_{def_id}_{i}")
+    result = generate_definition_image(definition, uuid, def_id, output_dir, word, i, image_model, image_size)
     logger.info(f"Definition image result: {result['status']}")
     return result
 
@@ -270,18 +272,17 @@ def generate_assets_for_word(
     Returns:
         Dict with generation results
     """
+    if not generate_audio and not generate_images:
+        logger.warning(f"No audio or image generation requested for {word}")
+        return {"status": "skipped", "word": word, "uuid": uuid}
+
     logger.info(f"Generating assets for word: {word} ({uuid})")
-    logger.info(f"[CELERY DEBUG] Asset output_dir: {output_dir}")
-    logger.info(f"[CELERY DEBUG] output_dir is absolute: {os.path.isabs(output_dir)}")
-    logger.info(f"[CELERY DEBUG] output_dir exists: {os.path.exists(output_dir)}")
-    
+    logger.debug(f"[CELERY DEBUG] Asset output_dir: {output_dir}")
+    logger.debug(f"[CELERY DEBUG] output_dir is absolute: {os.path.isabs(output_dir)}")
+    logger.debug(f"[CELERY DEBUG] output_dir exists: {os.path.exists(output_dir)}")
+
     results = {"word": word, "uuid": uuid, "word_audio": None, "definitions": []}
     
-    # Generate word audio
-    if generate_audio:
-        results["word_audio"] = generate_word_audio_task(
-            word, uuid, output_dir, audio_model, audio_voice
-        )
     
     # Get definitions
     db = Dictionary(db_path)
@@ -290,17 +291,21 @@ def generate_assets_for_word(
     
     # Generate assets for each definition
     for defn in definitions:
-        def_results = {"id": defn.id, "audio": None, "image": None}
+        def_results = {"id": defn.id, "audio_tasks": [], "image_tasks": []}
         
-        if generate_audio:
-            def_results["audio"] = generate_definition_audio_task(
-                defn.definition, uuid, defn.id, output_dir, audio_model, audio_voice
-            )
-        
-        if generate_images:
-            def_results["image"] = generate_definition_image_task(
-                defn.definition, uuid, defn.id, output_dir, word, image_model, image_size
-            )
+        # Generate 2 variants of each asset (i=0, i=1)
+        for i in range(2):
+            if generate_audio:
+                audio_task = generate_definition_audio_task.delay(
+                    defn.definition, uuid, defn.id, output_dir, i, audio_model, audio_voice
+                )
+                def_results["audio_tasks"].append({"i": i, "task_id": audio_task.id})
+            
+            if generate_images:
+                image_task = generate_definition_image_task.delay(
+                    defn.definition, uuid, defn.id, output_dir, word, i, image_model, image_size
+                )
+                def_results["image_tasks"].append({"i": i, "task_id": image_task.id})
         
         results["definitions"].append(def_results)
     
@@ -551,21 +556,27 @@ def package_all_assets(
         
         # Package definition assets
         for defn in definitions:
-            # Definition audio
-            def_audio_file = f"shortdef_{word.uuid}_{defn.id}.aac"
-            audio_result = encode_and_package_audio(
-                def_audio_file, asset_dir, package_dir, packaging_db_path,
-                word.uuid, "shortdef", defn.id
-            )
-            results.append(audio_result)
+            # Package 2 variants of definition audio (i=0, i=1)
+            for i in range(2):
+                def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{i}.aac"
+                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
+                audio_sid = defn.id * 100 + i
+                audio_result = encode_and_package_audio(
+                    def_audio_file, asset_dir, package_dir, packaging_db_path,
+                    word.uuid, "shortdef", audio_sid
+                )
+                results.append(audio_result)
             
-            # Definition image
-            def_image_file = f"image_{word.uuid}_{defn.id}.png"
-            image_result = encode_and_package_image(
-                def_image_file, asset_dir, package_dir, packaging_db_path,
-                word.uuid, "image", defn.id
-            )
-            results.append(image_result)
+            # Package 2 variants of definition image (i=0, i=1)
+            for i in range(2):
+                def_image_file = f"image_{word.uuid}_{defn.id}_{i}.png"
+                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
+                image_sid = defn.id * 100 + i
+                image_result = encode_and_package_image(
+                    def_image_file, asset_dir, package_dir, packaging_db_path,
+                    word.uuid, "image", image_sid
+                )
+                results.append(image_result)
         
         # Update task progress
         self.update_state(

@@ -79,6 +79,163 @@ def list_package_files():
     pkg_dir = BASE_DIR / PACKAGE_DIR
     if not pkg_dir.exists():
         return []
+    
+
+# === Build Tests Page and AJAX Endpoints ===
+from libs.pg_test import PostgresTestDatabase
+from libs.pg_dictionary import PostgresDictionary
+import random
+
+@app.route("/build_tests")
+def build_tests():
+    return render_template("build_tests.html")
+
+@app.route("/build_tests/get_tests")
+def build_tests_get_tests():
+    try:
+        with PostgresTestDatabase() as testdb:
+            tests = testdb.get_all_tests()
+            # If no tests exist, create a default one
+            if not tests:
+                test_id = testdb.create_test("sentence grammar")
+                tests = testdb.get_all_tests()
+            test_list = [{"id": t.id, "name": t.name} for t in tests]
+        return jsonify(success=True, tests=test_list)
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[build_tests_get_tests ERROR] {error_details}")
+        return jsonify(success=False, error=str(e))
+
+@app.route("/build_tests/add_question", methods=["POST"])
+def build_tests_add_question():
+    prompt = request.form.get("prompt", "").strip()
+    test_id = request.form.get("test_id")
+    if not prompt:
+        return jsonify(success=False, error="No prompt provided.")
+    if not test_id:
+        return jsonify(success=False, error="No test selected.")
+    try:
+        with PostgresTestDatabase() as testdb:
+            qid = testdb.create_question(int(test_id), prompt)
+        return jsonify(success=True, question_id=qid)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+@app.route("/build_tests/get_words")
+def build_tests_get_words():
+    label = request.args.get("label", "")
+    count = int(request.args.get("count", 100))
+    try:
+        db = PostgresDictionary()
+        if label == "proper noun":
+            # function_label == 'noun' and first letter capitalized (uppercase)
+            rows = db.execute_fetchall(
+                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' ORDER BY random() LIMIT %s",
+                (count,)
+            )
+        elif label == "noun":
+            # function_label == 'noun' and first letter lowercase, starts with a letter
+            rows = db.execute_fetchall(
+                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' ORDER BY random() LIMIT %s",
+                (count,)
+            )
+        elif label in ["verb", "adjective", "adverb"]:
+            # Exclude words that do not start with a letter
+            rows = db.execute_fetchall(
+                "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' ORDER BY random() LIMIT %s",
+                (label, count)
+            )
+        else:
+            rows = db.execute_fetchall(
+                "SELECT word FROM words WHERE functional_label = %s ORDER BY random() LIMIT %s",
+                (label, count)
+            )
+        words = [r["word"] for r in rows]
+        return jsonify(success=True, words=words)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+@app.route("/build_tests/add_answer", methods=["POST"])
+def build_tests_add_answer():
+    question_id = request.form.get("question_id")
+    word = request.form.get("word", "")
+    is_correct = int(request.form.get("is_correct", 0))
+    if not question_id or not word:
+        return jsonify(success=False, error="Missing question_id or word.")
+    try:
+        # Insert answer (body=word)
+        with PostgresTestDatabase() as testdb:
+            try:
+                testdb.create_answer(int(question_id), word, bool(is_correct))
+            except Exception as e:
+                # Check for unique constraint violation (duplicate answer)
+                if 'duplicate key value violates unique constraint' in str(e):
+                    return jsonify(success=True)
+                raise
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+# === View Tests Page ===
+@app.route("/view_tests")
+def view_tests():
+    return render_template("view_tests.html")
+
+@app.route("/view_tests/get_data")
+def view_tests_get_data():
+    try:
+        with PostgresTestDatabase() as testdb:
+            tests = testdb.get_all_tests()
+            result = []
+            for test in tests:
+                questions = testdb.get_questions_for_test(test.id)
+                questions_data = []
+                for question in questions:
+                    answers = testdb.get_answers_for_question(question.id)
+                    questions_data.append({
+                        "id": question.id,
+                        "prompt": question.prompt,
+                        "explanation": question.explanation,
+                        "answers": [{"id": a.id, "body": a.body, "is_correct": a.is_correct, "weight": a.weight} for a in answers]
+                    })
+                result.append({
+                    "id": test.id,
+                    "name": test.name,
+                    "version": test.version,
+                    "created_at": test.created_at.isoformat(),
+                    "questions": questions_data
+                })
+        return jsonify(success=True, tests=result)
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[view_tests_get_data ERROR] {error_details}")
+        return jsonify(success=False, error=str(e))
+
+@app.route("/view_tests/delete_question", methods=["POST"])
+def view_tests_delete_question():
+    question_id = request.form.get("question_id")
+    if not question_id:
+        return jsonify(success=False, error="No question_id provided.")
+    try:
+        with PostgresTestDatabase() as testdb:
+            success = testdb.delete_question(int(question_id))
+        return jsonify(success=success)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+
+@app.route("/view_tests/delete_answer", methods=["POST"])
+def view_tests_delete_answer():
+    answer_id = request.form.get("answer_id")
+    if not answer_id:
+        return jsonify(success=False, error="No answer_id provided.")
+    try:
+        with PostgresTestDatabase() as testdb:
+            success = testdb.delete_answer(int(answer_id))
+        return jsonify(success=success)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
     return [f for f in pkg_dir.glob("package_*.zip") if f.is_file()]
 
 def list_db_files():
