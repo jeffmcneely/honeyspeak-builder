@@ -10,9 +10,12 @@ SQLITE_SCHEMA = [
         word TEXT NOT NULL,
         functional_label TEXT,
         uuid TEXT PRIMARY KEY,
-        flags INTEGER DEFAULT 0
+        flags INTEGER DEFAULT 0,
+        level INTEGER
     )""",
     """CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)""",
+    """CREATE INDEX IF NOT EXISTS idx_words_level ON words(level)""",
+    """CREATE INDEX IF NOT EXISTS idx_words_level_word ON words(level, word)""",
     # shortdef: unique per (uuid, def), cascade delete on words.uuid
     """CREATE TABLE IF NOT EXISTS shortdef (
         uuid TEXT,
@@ -127,6 +130,7 @@ class Word:
     functional_label: Optional[str]
     uuid: str
     flags: int = 0
+    level: Optional[int] = None
 
     @property
     def flagset(self) -> Flags:
@@ -139,6 +143,7 @@ class Word:
             functional_label=row["functional_label"],
             uuid=row["uuid"],
             flags=row["flags"] if "flags" in row.keys() else 0,
+            level=row["level"] if "level" in row.keys() else None,
         )
 
 
@@ -314,6 +319,7 @@ class SQLiteDictionary:
         functional_label: str | None = None,
         uuid_: str | None = None,
         flags: int = 0,
+        level: int | None = None,
     ) -> str | None:
         try:
             cursor = self.connection.cursor()
@@ -323,8 +329,8 @@ class SQLiteDictionary:
             if cursor.fetchone():
                 return None
             cursor.execute(
-                "INSERT INTO words (word, functional_label, uuid, flags) VALUES (?, ?, ?, ?)",
-                (word, functional_label, uuid_, flags),
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
+                (word, functional_label, uuid_, flags, level),
             )
             self.connection.commit()
             return uuid_
@@ -371,7 +377,17 @@ class SQLiteDictionary:
             print(f"[get_all_words] Exception: {e}")
             return []
 
-    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None) -> List[dict]:
+    def get_words_by_level(self, level: int) -> List[Word]:
+        """Get all words for a specific level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM words WHERE level = ? ORDER BY word", (level,))
+            return [Word.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_words_by_level] Exception: {e}")
+            return []
+
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[int] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
@@ -381,29 +397,39 @@ class SQLiteDictionary:
         Args:
             limit: Maximum number of rows to return
             starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
+            level: Filter by CEFR level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)
         
         Returns:
-            List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
+            List of dicts with keys: uuid, word, functional_label, flags, level, def_id, definition
         """
         try:
             cursor = self.connection.cursor()
             query = """
                 SELECT 
-                    w.uuid, w.word, w.functional_label, w.flags,
+                    w.uuid, w.word, w.functional_label, w.flags, w.level,
                     s.id as def_id, s.definition
                 FROM words w
                 INNER JOIN shortdef s ON w.uuid = s.uuid
             """
             
             params = []
+            conditions = []
+            
             if starting_letter:
                 if starting_letter == '-':
                     # Non-alphabetic: use GLOB for SQLite
-                    query += " WHERE LOWER(SUBSTR(w.word, 1, 1)) NOT GLOB '[a-z]'"
+                    conditions.append("LOWER(SUBSTR(w.word, 1, 1)) NOT GLOB '[a-z]'")
                 else:
                     # Specific letter
-                    query += " WHERE LOWER(SUBSTR(w.word, 1, 1)) = ?"
+                    conditions.append("LOWER(SUBSTR(w.word, 1, 1)) = ?")
                     params.append(starting_letter.lower())
+            
+            if level:
+                conditions.append("w.level = ?")
+                params.append(level)
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
             
             query += " ORDER BY w.word, s.id"
             
@@ -477,6 +503,7 @@ class SQLiteDictionary:
         word: str,
         functional_label: str | None = None,
         flags: int | None = None,
+        level: int | None = None,
     ) -> int:
         try:
             cursor = self.connection.cursor()
@@ -488,6 +515,9 @@ class SQLiteDictionary:
             if flags is not None:
                 updates.append("flags = ?")
                 params.append(flags)
+            if level is not None:
+                updates.append("level = ?")
+                params.append(level)
             if not updates:
                 return 0
             params.append(word)
@@ -505,6 +535,7 @@ class SQLiteDictionary:
         uuid_: str,
         functional_label: str | None = None,
         flags: int | None = None,
+        level: int | None = None,
     ) -> int:
         """Preferred update using uuid as identifier."""
         try:
@@ -517,6 +548,9 @@ class SQLiteDictionary:
             if flags is not None:
                 updates.append("flags = ?")
                 params.append(flags)
+            if level is not None:
+                updates.append("level = ?")
+                params.append(level)
             if not updates:
                 return 0
             params.append(uuid_)

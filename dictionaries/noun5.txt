@@ -1,5 +1,0 @@
-aircraft
-airport
-alligator
-ambulance
-ankle
