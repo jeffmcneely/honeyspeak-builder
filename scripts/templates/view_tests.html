@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>View Tests</h2>
+  <div id="tests-container">
+    <p class="text-muted">Loading tests...</p>
+  </div>
+</div>
+
+<!-- Add jQuery before your script -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+function loadTests() {
+  $.get('/view_tests/get_data', function(data) {
+    if (data.success) {
+      let html = '';
+      if (data.tests.length === 0) {
+        html = '<p class="text-muted">No tests found.</p>';
+      } else {
+        data.tests.forEach(test => {
+          html += `
+            <div class="card mb-4">
+              <div class="card-header">
+                <h4>${test.name} <small class="text-muted">(v${test.version})</small></h4>
+                <small class="text-muted">Created: ${new Date(test.created_at).toLocaleString()}</small>
+              </div>
+              <div class="card-body">
+          `;
+          
+          if (test.questions.length === 0) {
+            html += '<p class="text-muted">No questions yet.</p>';
+          } else {
+            test.questions.forEach(question => {
+              html += `
+                <div class="question-block mb-3 p-3 border rounded">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                      <strong>Q${question.id}:</strong> ${question.prompt}
+                    </div>
+                    <button class="btn btn-sm btn-danger delete-question" data-id="${question.id}">Delete</button>
+                  </div>
+                  <div class="answers mt-2">
+                    <div class="row">
+                      <div class="col-md-6">
+                        <h6 class="text-success">Correct Answers:</h6>
+                        <ul class="list-unstyled">
+              `;
+              
+              question.answers.filter(a => a.is_correct).forEach(answer => {
+                html += `
+                  <li class="mb-1">
+                    <span class="badge bg-success">${answer.body}</span>
+                    <button class="btn btn-sm btn-outline-danger delete-answer" data-id="${answer.id}">×</button>
+                  </li>
+                `;
+              });
+              
+              html += `
+                        </ul>
+                      </div>
+                      <div class="col-md-6">
+                        <h6 class="text-danger">Incorrect Answers:</h6>
+                        <ul class="list-unstyled">
+              `;
+              
+              question.answers.filter(a => !a.is_correct).forEach(answer => {
+                html += `
+                  <li class="mb-1">
+                    <span class="badge bg-danger">${answer.body}</span>
+                    <button class="btn btn-sm btn-outline-danger delete-answer" data-id="${answer.id}">×</button>
+                  </li>
+                `;
+              });
+              
+              html += `
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            });
+          }
+          
+          html += `
+              </div>
+            </div>
+          `;
+        });
+      }
+      $('#tests-container').html(html);
+    } else {
+      $('#tests-container').html('<div class="alert alert-danger">' + data.error + '</div>');
+    }
+  });
+}
+
+$(function() {
+  loadTests();
+  
+  // Delete question
+  $(document).on('click', '.delete-question', function() {
+    if (!confirm('Delete this question and all its answers?')) return;
+    const qid = $(this).data('id');
+    $.post('/view_tests/delete_question', { question_id: qid }, function(data) {
+      if (data.success) {
+        loadTests();
+      } else {
+        alert('Error: ' + data.error);
+      }
+    });
+  });
+  
+  // Delete answer
+  $(document).on('click', '.delete-answer', function() {
+    const aid = $(this).data('id');
+    $.post('/view_tests/delete_answer', { answer_id: aid }, function(data) {
+      if (data.success) {
+        loadTests();
+      } else {
+        alert('Error: ' + data.error);
+      }
+    });
+  });
+});
+</script>
+
+<style>
+.question-block { background: #f8f9fa; }
+.delete-answer { padding: 0 4px; font-size: 16px; }
+</style>
+{% endblock %}

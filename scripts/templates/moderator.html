@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+
+{% block title %}Moderator{% endblock %}
+
+{% block extra_head %}
+<style>
+  .flag-icon {
+    display: inline-block;
+    padding: 2px 6px;
+    margin: 0 2px;
+    font-size: 0.75rem;
+    border-radius: 3px;
+    background: #6c757d;
+    color: white;
+  }
+  .flag-offensive { background: #dc3545; }
+  .flag-british { background: #0d6efd; }
+  .flag-us { background: #198754; }
+  .flag-old { background: #6c757d; }
+  .flag-informal { background: #ffc107; color: #000; }
+  
+  /* Definition item layout: image on left, content in middle, image on right */
+  .definition-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 20px;
+    border-bottom: 1px solid #dee2e6;
+  }
+  
+  .definition-item:last-child {
+    border-bottom: none;
+  }
+  
+  /* Image containers */
+  .image-container {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .image-left, .image-right {
+    width: 144px;
+  }
+  
+  .imgwrap {
+    position: relative;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  
+  .imgwrap img {
+    display: block;
+    width: 144px;
+    height: auto;
+    object-fit: cover;
+    transition: all 0.3s ease;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+  }
+  
+  .imgwrap.expanded img {
+    width: 400px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 100;
+    position: relative;
+  }
+  
+  .imgwrap.removing {
+    opacity: 0.3;
+  }
+  
+  /* Content area */
+  .definition-content {
+    flex-grow: 1;
+    min-width: 0;
+  }
+
+  /* Delete buttons stacked vertically */
+  .delete-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: flex-start; /* prevent full-width stretch */
+  }
+  .delete-buttons .btn-delete-image {
+    width: 200px; /* limit button width */
+  }
+  
+  /* Delete button */
+  .btn-delete-image {
+    margin-top: 10px;
+  }
+  
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+  }
+  .spinner-border {
+    width: 3rem;
+    height: 3rem;
+  }
+  .letter-filter {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+  }
+  .letter-filter .btn {
+    margin: 2px;
+    min-width: 40px;
+  }
+  .letter-filter .btn-primary {
+    background: #0d6efd;
+    border-color: #0d6efd;
+  }
+  .letter-filter .btn-outline-primary:not(.active) {
+    color: #0d6efd;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="container-fluid mt-3">
+    <h1>Moderator</h1>
+    <p>Review generated definition images and remove any that are inappropriate or incorrect. Click an image to expand/collapse.</p>
+
+    <div class="letter-filter">
+      <div class="d-flex align-items-center mb-2">
+        <strong class="me-2">Filter by letter:</strong>
+        <button class="btn btn-sm btn-outline-secondary" onclick="clearFilter()">Clear</button>
+      </div>
+      <div id="letter-buttons">
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('a')">A</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('b')">B</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('c')">C</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('d')">D</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('e')">E</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('f')">F</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('g')">G</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('h')">H</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('i')">I</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('j')">J</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('k')">K</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('l')">L</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('m')">M</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('n')">N</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('o')">O</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('p')">P</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('q')">Q</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('r')">R</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('s')">S</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('t')">T</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('u')">U</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('v')">V</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('w')">W</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('x')">X</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('y')">Y</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('z')">Z</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('-')">-</button>
+      </div>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading definitions...</p>
+    </div>
+
+    <div id="no-filter-message" class="alert alert-info">
+      <strong>Select a letter above to load definitions.</strong> No definitions loaded by default.
+    </div>
+
+    <div id="definitions-list" class="list-group" style="display: none;">
+      <!-- Definitions will be populated via AJAX -->
+    </div>
+
+    <script>
+      let currentLetter = null;
+      
+      // Fetch and display definitions via AJAX
+      async function loadDefinitions(letter = null) {
+        try {
+          document.getElementById('loading').style.display = 'block';
+          document.getElementById('no-filter-message').style.display = 'none';
+          document.getElementById('definitions-list').style.display = 'none';
+          
+          const url = letter ? `/moderator/api/definitions?letter=${encodeURIComponent(letter)}` : '/moderator/api/definitions';
+          const response = await fetch(url);
+          const data = await response.json();
+          
+          document.getElementById('loading').style.display = 'none';
+          const listContainer = document.getElementById('definitions-list');
+          listContainer.style.display = 'block';
+          listContainer.innerHTML = ''; // Clear existing
+          
+          if (!data.definitions || data.definitions.length === 0) {
+            listContainer.innerHTML = '<div class="alert alert-info">No definitions with images found for this filter.</div>';
+            return;
+          }
+          
+          data.definitions.forEach(def => {
+            const item = createDefinitionItem(def);
+            listContainer.appendChild(item);
+          });
+          
+        } catch (error) {
+          console.error('Error loading definitions:', error);
+          document.getElementById('loading').innerHTML = 
+            '<div class="alert alert-danger">Error loading definitions. Please refresh the page.</div>';
+        }
+      }
+      
+      function filterByLetter(letter) {
+        currentLetter = letter;
+        
+        // Update button states
+        document.querySelectorAll('#letter-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-primary');
+          btn.classList.add('btn-outline-primary');
+        });
+        event.target.classList.remove('btn-outline-primary');
+        event.target.classList.add('active', 'btn-primary');
+        
+        loadDefinitions(letter);
+      }
+      
+      function clearFilter() {
+        currentLetter = null;
+        
+        // Update button states
+        document.querySelectorAll('#letter-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-primary');
+          btn.classList.add('btn-outline-primary');
+        });
+        
+        // Show no filter message
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('definitions-list').style.display = 'none';
+        document.getElementById('no-filter-message').style.display = 'block';
+      }
+      
+      function createDefinitionItem(def) {
+        const article = document.createElement('article');
+        article.className = 'definition-item';
+        
+        // Build flags HTML
+        let flagsHtml = '';
+        if (def.flags.offensive) flagsHtml += '<span class="flag-icon flag-offensive" title="Offensive">⚠️ Offensive</span>';
+        if (def.flags.british) flagsHtml += '<span class="flag-icon flag-british" title="British English">🇬🇧 British</span>';
+        if (def.flags.us) flagsHtml += '<span class="flag-icon flag-us" title="US English">🇺🇸 US</span>';
+        if (def.flags.old_fashioned) flagsHtml += '<span class="flag-icon flag-old" title="Old Fashioned">📜 Old</span>';
+        if (def.flags.informal) flagsHtml += '<span class="flag-icon flag-informal" title="Informal">💬 Informal</span>';
+        
+        // Determine left (_0) and right (_1) images
+        const leftImg = (def.images || []).find(fn => /_0\.(png|jpg|heic)$/i.test(fn));
+        const rightImg = (def.images || []).find(fn => /_1\.(png|jpg|heic)$/i.test(fn));
+
+        const leftHtml = leftImg ? `
+          <div class="imgwrap" data-filename="${escapeHtml(leftImg)}" onclick="toggleImageSize(this)">
+            <img src="/moderator/asset/${encodeURIComponent(leftImg)}" 
+                 alt="${escapeHtml(leftImg)}" 
+                 title="Click to expand/collapse"/>
+          </div>
+        ` : '<div class="text-muted small">No _0 image</div>';
+
+        const rightHtml = rightImg ? `
+          <div class="imgwrap" data-filename="${escapeHtml(rightImg)}" onclick="toggleImageSize(this)">
+            <img src="/moderator/asset/${encodeURIComponent(rightImg)}" 
+                 alt="${escapeHtml(rightImg)}" 
+                 title="Click to expand/collapse"/>
+          </div>
+        ` : '<div class="text-muted small">No _1 image</div>';
+
+        // Build delete buttons for middle column
+        let deleteButtonsHtml = '';
+        if (leftImg) {
+          deleteButtonsHtml += `
+            <button class="btn btn-sm btn-primary btn-delete-image" 
+                    onclick="deleteImage(this)"
+                    data-filename="${escapeHtml(leftImg)}">
+              delete left
+            </button>`;
+        }
+        if (rightImg) {
+          deleteButtonsHtml += `
+            <button class="btn btn-sm btn-danger btn-delete-image" 
+                    onclick="deleteImage(this)"
+                    data-filename="${escapeHtml(rightImg)}">
+              delete right
+            </button>`;
+        }
+        
+        // Build header with word info
+        const funcLabel = def.functional_label ? ` <em class="text-muted">(${def.functional_label})</em>` : '';
+        
+        article.innerHTML = `
+          <aside class="image-container image-left">
+            ${leftHtml}
+          </aside>
+          <section class="definition-content">
+            <header>
+              <h5 class="mb-1">
+                <strong>${escapeHtml(def.word)}</strong>${funcLabel}
+                ${flagsHtml}
+              </h5>
+              <small class="text-muted">UUID: ${def.uuid} | Def ID: ${def.id}</small>
+            </header>
+            <p class="mt-2 mb-2">${escapeHtml(def.definition)}</p>
+            <div class="delete-buttons">
+              ${deleteButtonsHtml}
+            </div>
+          </section>
+          <aside class="image-container image-right">
+            ${rightHtml}
+          </aside>
+        `;
+        
+        return article;
+      }
+      
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+      
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+      
+      function toggleImageSize(imgwrap) {
+        imgwrap.classList.toggle('expanded');
+      }
+      
+      async function deleteImage(button) {
+        const file = button.dataset.filename;
+        if (!file) return;
+        
+        // Find the corresponding image wrapper in the same definition-item
+        const defItem = button.closest('.definition-item');
+        if (!defItem) return;
+        
+        const wrap = defItem.querySelector(`.imgwrap[data-filename="${file}"]`);
+        if (!wrap) return;
+        
+        try {
+          button.disabled = true;
+          wrap.classList.add('removing');
+          const resp = await fetch(`/moderator/asset/${encodeURIComponent(file)}`, { method: 'DELETE' });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            console.error('Delete failed', data);
+            alert('Failed to delete image: ' + (data.error || 'Unknown error'));
+            wrap.classList.remove('removing');
+            button.disabled = false;
+            return;
+          }
+          // Remove after transition
+          setTimeout(() => {
+            wrap.remove();
+            button.remove();
+            // Check if parent definition item has no more images
+            if (defItem && !defItem.querySelector('.imgwrap')) {
+              const imageContainer = defItem.querySelector('.image-container');
+              if (imageContainer) {
+                imageContainer.innerHTML = '<em class="text-muted">All images deleted</em>';
+              }
+            }
+          }, 220);
+        } catch (e) {
+          console.error('Error deleting', e);
+          alert('Error deleting image');
+          wrap.classList.remove('removing');
+          button.disabled = false;
+        }
+      }
+      
+      // Don't load definitions on page load - wait for letter selection
+      
+      // Event delegation for image clicks
+      document.addEventListener('click', (e) => {
+        const img = e.target.closest('img.thumb');
+        if (img) {
+          e.preventDefault();
+          deleteImage(img);
+        }
+      });
+      
+      // Don't load definitions on page load - wait for letter selection
+      // document.addEventListener('DOMContentLoaded', loadDefinitions);
+    </script>
+  </div>
+{% endblock %}

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS words (
   word TEXT NOT NULL,
   functional_label TEXT,
   uuid TEXT PRIMARY KEY,
-  offensive INTEGER DEFAULT 0
+  flags INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_words_word ON words(word);
@@ -29,16 +29,42 @@ CREATE INDEX IF NOT EXISTS idx_words_word ON words(word);
 - word: TEXT — headword (required)
 - functional_label: TEXT — part of speech / label (e.g., "noun")
 - uuid: TEXT — primary key per word sense
-- offensive: INTEGER — 0/1 flag (default 0)
+- flags: INTEGER — bitfield (see below)
+
+#### Flags bitfield
+
+| Bit | Value | Meaning         |
+|-----|-------|----------------|
+| 1   | 1     | offensive      |
+| 2   | 2     | british        |
+| 3   | 4     | us             |
+| 4   | 8     | old-fashioned  |
 
 Dataclass:
 ```python
+@dataclass(frozen=True)
+class Flags:
+  offensive: bool = False
+  british: bool = False
+  us: bool = False
+  old_fashioned: bool = False
+
+  @staticmethod
+  def from_int(flags: int) -> "Flags":
+    ...
+  def to_int(self) -> int:
+    ...
+
 @dataclass(frozen=True)
 class Word:
   word: str
   functional_label: Optional[str]
   uuid: str
-  offensive: int = 0
+  flags: int = 0
+
+  @property
+  def flagset(self) -> Flags:
+    ...
 ```
 
 ### shortdef

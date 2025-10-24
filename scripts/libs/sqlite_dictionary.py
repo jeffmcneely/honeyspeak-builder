@@ -10,9 +10,12 @@ SQLITE_SCHEMA = [
         word TEXT NOT NULL,
         functional_label TEXT,
         uuid TEXT PRIMARY KEY,
-        offensive INTEGER DEFAULT 0
+        flags INTEGER DEFAULT 0,
+        level INTEGER
     )""",
     """CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)""",
+    """CREATE INDEX IF NOT EXISTS idx_words_level ON words(level)""",
+    """CREATE INDEX IF NOT EXISTS idx_words_level_word ON words(level, word)""",
     # shortdef: unique per (uuid, def), cascade delete on words.uuid
     """CREATE TABLE IF NOT EXISTS shortdef (
         uuid TEXT,
@@ -33,16 +36,105 @@ SQLITE_SCHEMA = [
     )""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
+    """CREATE TABLE IF NOT EXISTS stories (
+        uuid TEXT,
+        title TEXT,
+        style TEXT,
+        grouping TEXT,
+        difficulty TEXT,
+        PRIMARY KEY(uuid)
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_stories_grouping ON stories(grouping)""",
+    """CREATE INDEX IF NOT EXISTS idx_stories_difficulty ON stories(difficulty)""",
+    """CREATE INDEX IF NOT EXISTS idx_stories_uuid ON stories(uuid)""",
+    """CREATE TABLE IF NOT EXISTS story_paragraphs(
+        story_uuid TEXT,
+        paragraph_index INTEGER,
+        paragraph_title TEXT,
+        content TEXT,
+        PRIMARY KEY(story_uuid, paragraph_index),
+        FOREIGN KEY(story_uuid) REFERENCES stories(uuid) ON DELETE CASCADE
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_story_paragraphs_uuid ON story_paragraphs(story_uuid)""",
+    """CREATE TABLE test (
+        id         INTEGER PRIMARY KEY,
+        name       TEXT NOT NULL,
+        version    INTEGER DEFAULT 1,
+        created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE question (
+        id        INTEGER PRIMARY KEY,
+        test_id   INTEGER NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+        prompt    TEXT    NOT NULL,
+        explanation TEXT,
+        flags     INTEGER DEFAULT 0,
+        UNIQUE(test_id, prompt)
+    )""",
+    """CREATE TABLE answer (
+        id          INTEGER PRIMARY KEY,
+        question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
+        body        TEXT    NOT NULL,
+        is_correct  INTEGER NOT NULL CHECK (is_correct IN (0,1)),
+        weight      REAL    DEFAULT 1.0,        -- for sampling if needed
+        UNIQUE(question_id, body)
+    )""",
+    """CREATE INDEX idx_answer_qid           ON answer(question_id)""",
+    """CREATE INDEX idx_answer_qid_correct   ON answer(question_id) WHERE is_correct = 1""",
+    """CREATE INDEX idx_answer_qid_incorrect ON answer(question_id) WHERE is_correct = 0"""
 ]
 
 
 # Typed models returned by the repository
 @dataclass(frozen=True)
+class Flags:
+    offensive: bool = False
+    british: bool = False
+    us: bool = False
+    old_fashioned: bool = False
+    informal: bool = False
+
+    NONE: int = 0
+    OFFENSIVE: int = 1
+    BRITISH: int = 2
+    US: int = 4
+    OLD_FASHIONED: int = 8
+    INFORMAL: int = 16
+
+    @staticmethod
+    def from_int(flags: int) -> "Flags":
+        return Flags(
+            offensive=bool(flags & Flags.OFFENSIVE),
+            british=bool(flags & Flags.BRITISH),
+            us=bool(flags & Flags.US),
+            old_fashioned=bool(flags & Flags.OLD_FASHIONED),
+            informal=bool(flags & Flags.INFORMAL),
+        )
+
+    def to_int(self) -> int:
+        val = 0
+        if self.offensive:
+            val |= Flags.OFFENSIVE
+        if self.british:
+            val |= Flags.BRITISH
+        if self.us:
+            val |= Flags.US
+        if self.old_fashioned:
+            val |= Flags.OLD_FASHIONED
+        if self.informal:
+            val |= Flags.INFORMAL
+        return val
+
+@dataclass(frozen=True)
 class Word:
     word: str
     functional_label: Optional[str]
     uuid: str
-    offensive: int = 0
+    flags: int = 0
+    level: Optional[int] = None
+
+    @property
+    def flagset(self) -> Flags:
+        return Flags.from_int(self.flags)
 
     @staticmethod
     def from_row(row: sqlite3.Row) -> "Word":
@@ -50,7 +142,8 @@ class Word:
             word=row["word"],
             functional_label=row["functional_label"],
             uuid=row["uuid"],
-            offensive=row["offensive"] if "offensive" in row.keys() else 0,
+            flags=row["flags"] if "flags" in row.keys() else 0,
+            level=row["level"] if "level" in row.keys() else None,
         )
 
 
@@ -84,39 +177,149 @@ class Asset:
         )
 
 
+@dataclass(frozen=True)
+class Story:
+    uuid: str
+    title: str
+    style: str
+    grouping: str
+    difficulty: str
+
+    @staticmethod
+    def from_row(row: sqlite3.Row) -> "Story":
+        return Story(
+            uuid=row["uuid"],
+            title=row["title"],
+            style=row["style"],
+            grouping=row["grouping"],
+            difficulty=row["difficulty"],
+        )
+
+
+@dataclass(frozen=True)
+class StoryParagraph:
+    story_uuid: str
+    paragraph_index: int
+    paragraph_title: str
+    content: str
+
+    @staticmethod
+    def from_row(row: sqlite3.Row) -> "StoryParagraph":
+        return StoryParagraph(
+            story_uuid=row["story_uuid"],
+            paragraph_index=row["paragraph_index"],
+            paragraph_title=row["paragraph_title"],
+            content=row["content"],
+        )
+
+
 class SQLiteDictionary:
-    def __init__(self, db_path: str = "Dictionary.sqlite"):
+    """
+    SQLite dictionary with WAL mode for concurrent access.
+    Each instance has its own connection - do not share connections between threads.
+    """
+    
+    def __init__(self, db_path: str = "Dictionary.sqlite", production_mode: bool = False):
+        """
+        Initialize SQLite connection.
+        
+        Args:
+            db_path: Path to database file
+            production_mode: If True, disables WAL mode (for production.sqlite)
+            
+        Note: Database must already exist. Use /init_database Flask endpoint to create it first.
+        """
+        import os
+        
+        # If db_path is just a filename, prefix with STORAGE_DIRECTORY
+        if not os.path.isabs(db_path) and os.sep not in db_path:
+            storage_dir = os.getenv("STORAGE_DIRECTORY", "/data/honeyspeak")
+            db_path = os.path.join(storage_dir, db_path)
+            print(f"[SQLiteDictionary] Using STORAGE_DIRECTORY: {storage_dir}")
+        
         self.db_path = db_path
-        new_db = not Path(db_path).exists() or Path(db_path).stat().st_size == 0
-        self.connection = sqlite3.connect(self.db_path)
+        self.production_mode = production_mode
+        
+        # Check if database exists
+        if not Path(db_path).exists():
+            print(f"[SQLiteDictionary ERROR] Database does not exist: {db_path}")
+            print(f"[SQLiteDictionary ERROR] Please initialize it first via /init_database endpoint")
+            raise FileNotFoundError(f"Database not found: {db_path}. Initialize it via /init_database endpoint first.")
+        
+        # Open connection to existing database
+        print(f"[SQLiteDictionary] Opening connection to {db_path} (production_mode={production_mode})...")
+        self.connection = sqlite3.connect(
+            self.db_path,
+            timeout=30.0,
+            check_same_thread=False,
+            isolation_level=None  # Autocommit mode - we'll use explicit transactions
+        )
         self.connection.row_factory = sqlite3.Row
-
-        # Disable WAL and SHM files
-        self.connection.execute("PRAGMA journal_mode=DELETE")
-
-        # Enable foreign key constraints for CASCADE DELETE
-        self.connection.execute("PRAGMA foreign_keys=ON")
-
-        if new_db:
-            self._create_tables()
-
-    def _create_tables(self) -> None:
-        cursor = self.connection.cursor()
-        for stmt in SQLITE_SCHEMA:
+        
+        # Set connection-level pragmas
+        self.connection.execute("PRAGMA busy_timeout = 30000")
+        self.connection.execute("PRAGMA foreign_keys = ON")
+        
+        # Check if we're on a network filesystem (SMB/NFS) by checking the path
+        is_network_fs = str(db_path).startswith('/data/') or str(db_path).startswith('/mnt/')
+        
+        # If production mode, convert to DELETE journal mode
+        if production_mode:
+            print(f"[SQLiteDictionary] Converting to production mode (no WAL)...")
+            self.connection.execute("PRAGMA journal_mode = DELETE")
+            self.connection.execute("PRAGMA synchronous = FULL")
+        elif is_network_fs:
+            # Network filesystem detected - don't try to change journal mode
             try:
-                cursor.execute(stmt)
+                result = self.connection.execute("PRAGMA journal_mode").fetchone()
+                current_mode = result[0] if result else "unknown"
+                print(f"[SQLiteDictionary] Network FS detected - using existing journal mode: {current_mode}")
+                # Don't try to change it - just use what's there
             except Exception as e:
-                print(f"unable to execute statement '{stmt}'\n{e}")
+                print(f"[SQLiteDictionary WARNING] Could not check journal mode: {e}")
+        else:
+            # Try to ensure WAL mode for development on local filesystem
+            try:
+                result = self.connection.execute("PRAGMA journal_mode").fetchone()
+                current_mode = result[0] if result else "unknown"
+                print(f"[SQLiteDictionary] Current journal mode: {current_mode}")
+                
+                if current_mode.upper() != 'WAL':
+                    print(f"[SQLiteDictionary] Attempting to set WAL mode...")
+                    result = self.connection.execute("PRAGMA journal_mode = WAL").fetchone()
+                    if result and result[0].upper() == 'WAL':
+                        print(f"[SQLiteDictionary] Successfully enabled WAL mode")
+                    else:
+                        print(f"[SQLiteDictionary WARNING] Could not enable WAL mode, using {result[0] if result else 'DELETE'} mode")
+            except Exception as wal_e:
+                print(f"[SQLiteDictionary WARNING] Journal mode check/set failed: {wal_e}")
+        
+        print(f"[SQLiteDictionary] Ready (mode={'production' if production_mode else 'development'})")
+    
+    def begin_immediate(self):
+        """Start a write transaction with immediate lock."""
+        self.connection.execute("BEGIN IMMEDIATE")
+    
+    def commit(self):
+        """Commit current transaction."""
         self.connection.commit()
+    
+    def rollback(self):
+        """Rollback current transaction."""
+        try:
+            self.connection.rollback()
+        except:
+            pass
 
-        # CRUD for words
+    # CRUD for words
 
     def add_word(
         self,
         word: str,
         functional_label: str | None = None,
         uuid_: str | None = None,
-        offensive: int = 0,
+        flags: int = 0,
+        level: int | None = None,
     ) -> str | None:
         try:
             cursor = self.connection.cursor()
@@ -126,8 +329,8 @@ class SQLiteDictionary:
             if cursor.fetchone():
                 return None
             cursor.execute(
-                "INSERT INTO words (word, functional_label, uuid, offensive) VALUES (?, ?, ?, ?)",
-                (word, functional_label, uuid_, offensive),
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
+                (word, functional_label, uuid_, flags, level),
             )
             self.connection.commit()
             return uuid_
@@ -174,6 +377,71 @@ class SQLiteDictionary:
             print(f"[get_all_words] Exception: {e}")
             return []
 
+    def get_words_by_level(self, level: int) -> List[Word]:
+        """Get all words for a specific level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM words WHERE level = ? ORDER BY word", (level,))
+            return [Word.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_words_by_level] Exception: {e}")
+            return []
+
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[int] = None) -> List[dict]:
+        """
+        Get all definitions with their word data in a single optimized query.
+        
+        This eliminates the N+1 query problem when iterating through all words
+        and their definitions (e.g., in the moderator page or asset generation).
+        
+        Args:
+            limit: Maximum number of rows to return
+            starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
+            level: Filter by CEFR level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)
+        
+        Returns:
+            List of dicts with keys: uuid, word, functional_label, flags, level, def_id, definition
+        """
+        try:
+            cursor = self.connection.cursor()
+            query = """
+                SELECT 
+                    w.uuid, w.word, w.functional_label, w.flags, w.level,
+                    s.id as def_id, s.definition
+                FROM words w
+                INNER JOIN shortdef s ON w.uuid = s.uuid
+            """
+            
+            params = []
+            conditions = []
+            
+            if starting_letter:
+                if starting_letter == '-':
+                    # Non-alphabetic: use GLOB for SQLite
+                    conditions.append("LOWER(SUBSTR(w.word, 1, 1)) NOT GLOB '[a-z]'")
+                else:
+                    # Specific letter
+                    conditions.append("LOWER(SUBSTR(w.word, 1, 1)) = ?")
+                    params.append(starting_letter.lower())
+            
+            if level:
+                conditions.append("w.level = ?")
+                params.append(level)
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            
+            query += " ORDER BY w.word, s.id"
+            
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            cursor.execute(query, params)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"[get_all_definitions_with_words] Exception: {e}")
+            return []
+
     def get_word_count(self) -> int:
         try:
             cursor = self.connection.cursor()
@@ -183,6 +451,42 @@ class SQLiteDictionary:
         except Exception as e:
             print(f"[get_word_count] Exception: {e}")
             return 0
+
+    def get_asset_count(self) -> int:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM external_assets")
+            row = cursor.fetchone()
+            return row["count"] if row else 0
+        except Exception as e:
+            print(f"[get_asset_count] Exception: {e}")
+            return 0
+
+    def get_asset_count_by_group(self) -> dict:
+        """Return counts grouped by assetgroup (e.g., 'word', 'shortdef', 'image')."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT assetgroup, COUNT(*) as count FROM external_assets GROUP BY assetgroup"
+            )
+            rows = cursor.fetchall()
+            return {row["assetgroup"]: row["count"] for row in rows}
+        except Exception as e:
+            print(f"[get_asset_count_by_group] Exception: {e}")
+            return {}
+
+    def get_asset_count_by_package(self) -> dict:
+        """Return counts grouped by package id (the 'package' column in external_assets)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT package, COUNT(*) as count FROM external_assets GROUP BY package"
+            )
+            rows = cursor.fetchall()
+            return {row["package"]: row["count"] for row in rows}
+        except Exception as e:
+            print(f"[get_asset_count_by_package] Exception: {e}")
+            return {}
 
     def get_random_word(self) -> Optional[Word]:
         try:
@@ -198,7 +502,8 @@ class SQLiteDictionary:
         self,
         word: str,
         functional_label: str | None = None,
-        offensive: int | None = None,
+        flags: int | None = None,
+        level: int | None = None,
     ) -> int:
         try:
             cursor = self.connection.cursor()
@@ -207,9 +512,12 @@ class SQLiteDictionary:
             if functional_label is not None:
                 updates.append("functional_label = ?")
                 params.append(functional_label)
-            if offensive is not None:
-                updates.append("offensive = ?")
-                params.append(offensive)
+            if flags is not None:
+                updates.append("flags = ?")
+                params.append(flags)
+            if level is not None:
+                updates.append("level = ?")
+                params.append(level)
             if not updates:
                 return 0
             params.append(word)
@@ -226,7 +534,8 @@ class SQLiteDictionary:
         self,
         uuid_: str,
         functional_label: str | None = None,
-        offensive: int | None = None,
+        flags: int | None = None,
+        level: int | None = None,
     ) -> int:
         """Preferred update using uuid as identifier."""
         try:
@@ -236,9 +545,12 @@ class SQLiteDictionary:
             if functional_label is not None:
                 updates.append("functional_label = ?")
                 params.append(functional_label)
-            if offensive is not None:
-                updates.append("offensive = ?")
-                params.append(offensive)
+            if flags is not None:
+                updates.append("flags = ?")
+                params.append(flags)
+            if level is not None:
+                updates.append("level = ?")
+                params.append(level)
             if not updates:
                 return 0
             params.append(uuid_)
@@ -376,6 +688,212 @@ class SQLiteDictionary:
             return cursor.rowcount
         except Exception as e:
             print(f"[delete_assets] Exception: {e}")
+            return 0
+
+    # CRUD for stories
+    def add_story(
+        self,
+        uuid_: str,
+        title: str,
+        style: str,
+        grouping: str,
+        difficulty: str,
+    ) -> bool:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "INSERT INTO stories (uuid, title, style, grouping, difficulty) VALUES (?, ?, ?, ?, ?)",
+                (uuid_, title, style, grouping, difficulty),
+            )
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"[add_story] Exception: {e}")
+            return False
+
+    def get_story(self, uuid_: str) -> Optional[Story]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM stories WHERE uuid = ?", (uuid_,))
+            row = cursor.fetchone()
+            return Story.from_row(row) if row else None
+        except Exception as e:
+            print(f"[get_story] Exception: {e}")
+            return None
+
+    def get_all_stories(self) -> List[Story]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM stories")
+            return [Story.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_all_stories] Exception: {e}")
+            return []
+
+    def get_stories_by_grouping(self, grouping: str) -> List[Story]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM stories WHERE grouping = ?", (grouping,))
+            return [Story.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_stories_by_grouping] Exception: {e}")
+            return []
+
+    def get_stories_by_difficulty(self, difficulty: str) -> List[Story]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM stories WHERE difficulty = ?", (difficulty,))
+            return [Story.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_stories_by_difficulty] Exception: {e}")
+            return []
+
+    def update_story(
+        self,
+        uuid_: str,
+        title: str | None = None,
+        style: str | None = None,
+        grouping: str | None = None,
+        difficulty: str | None = None,
+    ) -> int:
+        try:
+            cursor = self.connection.cursor()
+            updates = []
+            params = []
+            if title is not None:
+                updates.append("title = ?")
+                params.append(title)
+            if style is not None:
+                updates.append("style = ?")
+                params.append(style)
+            if grouping is not None:
+                updates.append("grouping = ?")
+                params.append(grouping)
+            if difficulty is not None:
+                updates.append("difficulty = ?")
+                params.append(difficulty)
+            if not updates:
+                return 0
+            params.append(uuid_)
+            cursor.execute(
+                f"UPDATE stories SET {', '.join(updates)} WHERE uuid = ?", params
+            )
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"[update_story] Exception: {e}")
+            return 0
+
+    def delete_story(self, uuid_: str) -> int:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("DELETE FROM stories WHERE uuid = ?", (uuid_,))
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"[delete_story] Exception: {e}")
+            return 0
+
+    # CRUD for story_paragraphs
+    def add_story_paragraph(
+        self,
+        story_uuid: str,
+        paragraph_index: int,
+        paragraph_title: str,
+        content: str,
+    ) -> bool:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "INSERT INTO story_paragraphs (story_uuid, paragraph_index, paragraph_title, content) VALUES (?, ?, ?, ?)",
+                (story_uuid, paragraph_index, paragraph_title, content),
+            )
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"[add_story_paragraph] Exception: {e}")
+            return False
+
+    def get_story_paragraphs(self, story_uuid: str) -> List[StoryParagraph]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT * FROM story_paragraphs WHERE story_uuid = ? ORDER BY paragraph_index",
+                (story_uuid,),
+            )
+            return [StoryParagraph.from_row(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[get_story_paragraphs] Exception: {e}")
+            return []
+
+    def get_story_paragraph(
+        self, story_uuid: str, paragraph_index: int
+    ) -> Optional[StoryParagraph]:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT * FROM story_paragraphs WHERE story_uuid = ? AND paragraph_index = ?",
+                (story_uuid, paragraph_index),
+            )
+            row = cursor.fetchone()
+            return StoryParagraph.from_row(row) if row else None
+        except Exception as e:
+            print(f"[get_story_paragraph] Exception: {e}")
+            return None
+
+    def update_story_paragraph(
+        self,
+        story_uuid: str,
+        paragraph_index: int,
+        paragraph_title: str | None = None,
+        content: str | None = None,
+    ) -> int:
+        try:
+            cursor = self.connection.cursor()
+            updates = []
+            params = []
+            if paragraph_title is not None:
+                updates.append("paragraph_title = ?")
+                params.append(paragraph_title)
+            if content is not None:
+                updates.append("content = ?")
+                params.append(content)
+            if not updates:
+                return 0
+            params.extend([story_uuid, paragraph_index])
+            cursor.execute(
+                f"UPDATE story_paragraphs SET {', '.join(updates)} WHERE story_uuid = ? AND paragraph_index = ?",
+                params,
+            )
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"[update_story_paragraph] Exception: {e}")
+            return 0
+
+    def delete_story_paragraph(self, story_uuid: str, paragraph_index: int) -> int:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM story_paragraphs WHERE story_uuid = ? AND paragraph_index = ?",
+                (story_uuid, paragraph_index),
+            )
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"[delete_story_paragraph] Exception: {e}")
+            return 0
+
+    def delete_story_paragraphs(self, story_uuid: str) -> int:
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM story_paragraphs WHERE story_uuid = ?", (story_uuid,)
+            )
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"[delete_story_paragraphs] Exception: {e}")
             return 0
 
     def close(self):

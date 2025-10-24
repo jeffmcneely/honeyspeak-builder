@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Build Package</h1>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="alert alert-info">
+                        <strong>Database Backend:</strong> {{ backend }}
+                    </div>
+                    
+                    <h5>Package Options</h5>
+                    
+                    <div class="mb-3">
+                        <label for="asset_dir" class="form-label">Asset Directory</label>
+                        <input type="text" class="form-control" name="asset_dir" id="asset_dir" value="{{ asset_dir }}">
+                        <small class="text-muted">Directory containing the high-resolution assets to package</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="packagedir" class="form-label">Package Output Directory</label>
+                        <input type="text" class="form-control" name="packagedir" id="packagedir" value="{{ package_dir }}">
+                        <small class="text-muted">Directory where package files will be created</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-box-seam"></i> Start Packaging
+                    </button>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Information</h5>
+                <p>This will package assets for distribution:</p>
+                <ul>
+                    <li>Audio files will be converted to low-bitrate AAC</li>
+                    <li>Images will be downscaled and converted to HEIF</li>
+                    <li>Files will be split into ~100MB packages</li>
+                    <li>Database will be updated with package locations</li>
+                </ul>
+                {% if backend and 'PostgreSQL' in backend %}
+                <div class="alert alert-warning mt-3">
+                    <strong>Note:</strong> PostgreSQL data will be converted to SQLite format for packaging.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

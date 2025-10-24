@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Log Viewer - {{ filename }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📄 {{ filename }}</h2>
+        <div>
+            <a href="{{ url_for('download_log', filename=filename) }}" class="btn btn-primary btn-sm">
+                ⬇️ Download
+            </a>
+            <a href="{{ url_for('logs') }}" class="btn btn-secondary btn-sm">
+                ← Back to Logs
+            </a>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            <pre class="mb-0" style="max-height: 70vh; overflow-y: auto; font-size: 0.85rem; background-color: #f8f9fa; padding: 1rem; border-radius: 0.25rem;"><code>{{ content }}</code></pre>
+        </div>
+    </div>
+    
+    <div class="mt-3">
+        <button class="btn btn-info btn-sm" onclick="scrollToBottom()">↓ Scroll to Bottom</button>
+        <button class="btn btn-info btn-sm" onclick="scrollToTop()">↑ Scroll to Top</button>
+    </div>
+</div>
+
+<script>
+function scrollToBottom() {
+    const pre = document.querySelector('pre');
+    pre.scrollTop = pre.scrollHeight;
+}
+
+function scrollToTop() {
+    const pre = document.querySelector('pre');
+    pre.scrollTop = 0;
+}
+
+// Auto-scroll to bottom on load
+window.addEventListener('load', function() {
+    scrollToBottom();
+});
+</script>
+{% endblock %}

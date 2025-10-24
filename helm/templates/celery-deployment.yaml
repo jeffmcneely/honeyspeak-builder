@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery
+spec:
+  replicas: {{ .Values.celery.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: celery
+  template:
+    metadata:
+      labels:
+        app: celery
+    spec:
+      {{- $ps := .Values.image.pullSecrets }}
+      {{- if $ps }}
+      imagePullSecrets:
+        {{- if kindIs "string" $ps }}
+        - name: {{ $ps | quote }}
+        {{- else if kindIs "slice" $ps }}
+          {{- range $i, $v := $ps }}
+            {{- if kindIs "string" $v }}
+        - name: {{ $v | quote }}
+            {{- else }}
+        - name: {{ (get $v "name") | default $v | quote }}
+            {{- end }}
+          {{- end }}
+        {{- else }}
+        - name: {{ (get $ps "name") | quote }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: celery
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        command: ["celery", "-A", "scripts.celery_tasks.celery_app", "worker", "--loglevel=info", "--concurrency={{ .Values.celery.concurrency | default 4 }}"]
+        env:
+        - name: PYTHONPATH
+          value: "/app/scripts"
+        - name: STORAGE_HOME
+          value: {{ .Values.env.STORAGE_HOME | default "/data" | quote }}
+        - name: STORAGE_DIRECTORY
+          value: {{ .Values.env.STORAGE_DIRECTORY | default "/data/honeyspeak" | quote }}
+        - name: DATABASE_PATH
+          value: {{ .Values.env.DATABASE_PATH | default "/data/honeyspeak/Dictionary.sqlite" | quote }}
+        - name: ASSET_DIRECTORY
+          value: {{ .Values.env.ASSET_DIRECTORY | default "/data/honeyspeak/assets_hires" | quote }}
+        - name: PACKAGE_DIRECTORY
+          value: {{ .Values.env.PACKAGE_DIRECTORY | default "/data/honeyspeak/assets" | quote }}
+        - name: CELERY_BROKER_URL
+          value: {{ .Values.env.CELERY_BROKER_URL | default "redis://redis:6379/0" | quote }}
+        - name: CELERY_RESULT_BACKEND
+          value: {{ .Values.env.CELERY_RESULT_BACKEND | default "redis://redis:6379/0" | quote }}
+        - name: DICTIONARY_API_KEY
+          value: {{ .Values.env.DICTIONARY_API_KEY | default "" | quote }}
+        - name: OPENAI_API_KEY
+          value: {{ .Values.env.OPENAI_API_KEY | default "" | quote }}
+        - name: COMFYUI_SERVER
+          value: {{ .Values.env.COMFYUI_SERVER | default "" | quote }}
+        - name: COMFY_OUTPUT_FOLDER
+          value: {{ .Values.env.COMFY_OUTPUT_FOLDER | default "" | quote }}
+        - name: POSTGRES_CONNECTION
+          value: {{ .Values.env.POSTGRES_CONNECTION | default "" | quote }}
+        - name: POSTGRES_CONN
+          value: {{ .Values.env.POSTGRES_CONN | default .Values.env.POSTGRES_CONNECTION | default "" | quote }}
+        volumeMounts:
+        - name: data
+          mountPath: {{ .Values.storage.mountPath | default "/data" }}
+        {{- if .Values.storage.comfy.enabled }}
+        - name: comfy-output
+          mountPath: {{ .Values.storage.comfy.mountPath | default "/comfyout" }}
+        {{- end }}
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: honeyspeak-builder-pvc
+      {{- if .Values.storage.comfy.enabled }}
+      - name: comfy-output
+        {{- if .Values.storage.comfy.hostPath.enabled }}
+        hostPath:
+          path: {{ .Values.storage.comfy.hostPath.path | quote }}
+          type: DirectoryOrCreate
+        {{- else if .Values.storage.comfy.nfs.enabled }}
+        nfs:
+          server: {{ .Values.storage.comfy.nfs.server | quote }}
+          path: {{ .Values.storage.comfy.nfs.path | quote }}
+        {{- else if .Values.storage.comfy.smb.enabled }}
+        csi:
+          driver: smb.csi.k8s.io
+          volumeAttributes:
+            source: "//{{ .Values.storage.comfy.smb.server }}/{{ .Values.storage.comfy.smb.share }}"
+          nodeStageSecretRef:
+            name: comfy-smb-secret
+        {{- end }}
+      {{- end }}

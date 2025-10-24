@@ -1,0 +1,80 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/jeffmcneely/honeyspeak-builder
+  tag: latest
+  pullSecrets: ghcr-secret
+service:
+  type: NodePort
+  port: 5002
+  nodePort: 32003
+
+resources: {}
+
+env:
+  STORAGE_HOME: "/data"
+  STORAGE_DIRECTORY: "/data/honeyspeak"
+  DATABASE_PATH: "/data/honeyspeak/Dictionary.sqlite"
+  ASSET_DIRECTORY: "/data/honeyspeak/assets_hires"
+  PACKAGE_DIRECTORY: "/data/honeyspeak/assets"
+  FLASK_SECRET_KEY: "supersecret"
+  CELERY_BROKER_URL: "redis://redis:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+  DICTIONARY_API_KEY: ""
+  OPENAI_API_KEY: ""
+  # ComfyUI server endpoint (full URL). If set, the 'sdxl_turbo' image model
+  # will POST payloads (libs/image-sdxl_turbo.json) to this URL.
+  COMFYUI_SERVER: ""
+  # ComfyUI output folder - mounted directory where ComfyUI saves generated images
+  COMFY_OUTPUT_FOLDER: ""
+  # PostgreSQL connection string. Set this to enable the PostgreSQL backend.
+  # The application reads POSTGRES_CONNECTION; POSTGRES_CONN is provided
+  # as an alias for backwards compatibility.
+  POSTGRES_CONNECTION: ""
+  POSTGRES_CONN: ""
+
+storage:
+  mountPath: "/data"
+  storageDirectory: "honeyspeak"
+  subPaths:
+    database: "Dictionary.sqlite"
+    assets: "assets_hires"
+    packages: "assets"
+  comfy:
+    enabled: false
+    mountPath: "/comfyout"
+    # Options for mounting ComfyUI output directory
+    # Use either hostPath (for local K8s) or NFS
+    hostPath:
+      enabled: false
+      path: ""  # e.g., "/mnt/comfyui/output"
+    nfs:
+      enabled: false
+      server: ""  # e.g., "stryker"
+      path: ""    # e.g., "/path/to/comfyui/output"
+    smb:
+      enabled: false
+      server: ""
+      share: ""
+      username: ""
+      password: ""
+
+redis:
+  image: "redis:7-alpine"
+  port: 6379
+
+celery:
+  replicaCount: 1
+  concurrency: 4
+  command: ["celery", "-A", "scripts.celery_tasks.celery_app", "worker", "--loglevel=info"]
+
+pvc:
+  storage: "10Gi"
+  accessMode: "ReadWriteOnce"
+  smb:
+    enabled: false
+    server: ""
+    share: ""
+    username: ""
+    password: ""
+    mountOptions: ["dir_mode=0777","file_mode=0777","uid=1000","gid=1000","vers=3.0"]

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Build Dictionary{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <h1>📖 Build Dictionary</h1>
+  
+  {% if backend %}
+  <div class="alert alert-info mb-4">
+    <strong>Database Backend:</strong> {{ backend }}
+  </div>
+  {% endif %}
+  
+  <!-- Single Word Form -->
+  <div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">Fetch Single Word</h5>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('build_dictionary_single') }}">
+        <div class="mb-3">
+          <label for="single_word" class="form-label">Word:</label>
+          <input type="text" class="form-control" id="single_word" name="word" placeholder="Enter a word (e.g., hello)" required>
+          <small class="form-text text-muted">Fetch and process a single word from the dictionary API</small>
+        </div>
+        <button type="submit" class="btn btn-primary">🔍 Fetch Word</button>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Wordlist File Form -->
+  <div class="card mb-4">
+    <div class="card-header bg-secondary text-white">
+      <h5 class="mb-0">Process Word List</h5>
+    </div>
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label for="wordlist" class="form-label">Wordlist File:</label>
+          <input type="file" class="form-control" id="wordlist" name="wordlist" accept=".txt" required>
+          <small class="form-text text-muted">Upload a text file with one word per line</small>
+        </div>
+        <button type="submit" class="btn btn-secondary">📄 Process Wordlist</button>
+      </form>
+    </div>
+  </div>
+  
+  <div class="mt-3">
+    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">← Back to Home</a>
+  </div>
+</div>
+{% endblock %}

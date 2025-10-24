@@ -4,14 +4,12 @@ import os
 from pathlib import Path
 import base64
 from openai import OpenAI
-from openai._exceptions import (
-    OpenAIError,
-    APIError,
-    RateLimitError,
-    APITimeoutError,
-    BadRequestError,
+from openai._exceptions import BadRequestError, OpenAIError
+from libs.openai_helpers import (
+    strip_tags, log_400_error, call_openai_audio_streaming, call_openai_audio_non_streaming, call_openai_image,
+    TTS_MODELS, IMAGE_MODELS, VOICES, IMAGE_SIZES, audio_format, image_format
 )
-from libs.sqlite_dictionary import SQLiteDictionary
+from libs.dictionary import Dictionary
 from rich.progress import Progress, track
 from dotenv import load_dotenv
 import re
@@ -36,120 +34,9 @@ app.conf.update(
     enable_utc=True,
 )
 
-
-# Models supported by audio/speech endpoint
-TTS_MODELS = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]  # per docs
-IMAGE_MODELS = ["all-e-2", "dall-e-3", "gpt-image-1"]
-# Built-in voices per docs
-VOICES = [
-    "alloy",
-    "ash",
-    "ballad",
-    "coral",
-    "echo",
-    "fable",
-    "onyx",
-    "nova",
-    "sage",
-    "shimmer",
-    "verse",
-]
-IMAGE_SIZES = ["square", "vertical", "horizontal"]
-
-audio_format = "aac"
-image_format = "png"
-
-
-def log_400_error(error: BadRequestError, text: str, context: str) -> None:
-    """
-    Log 400 Bad Request errors from OpenAI API to errors.txt file.
-
-    Args:
-        error: The BadRequestError exception
-        text: The text/prompt that caused the error
-        context: Context information (e.g., 'audio', 'image')
-    """
-    error_file = Path("errors.txt")
-
-    timestamp = datetime.now().isoformat()
-    error_message = str(error)
-
-    # Try to extract the error message from the response if available
-    error_details = ""
-    if hasattr(error, "response") and error.response is not None:
-        try:
-            response_json = error.response.json()
-            if "error" in response_json and "message" in response_json["error"]:
-                error_details = response_json["error"]["message"]
-        except:
-            pass
-
     # Build log entry
-    log_entry = f"""
-{'='*80}
-Timestamp: {timestamp}
-Context: {context}
-Status Code: 400
-Error Message: {error_details or error_message}
-Input Text: {text}
-{'='*80}
-
-"""
-
-    # Append to errors.txt
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(log_entry)
 
 
-def strip_tags(text: str) -> str:
-    """
-    Remove anything between curly braces {} including the braces themselves.
-    """
-    return re.sub(r"\{.*?\}", "", text)
-
-
-def _call_openai_audio_streaming(
-    client: OpenAI, audio_model: str, audio_voice: str, text: str, fname: str
-) -> None:
-    """
-    Call OpenAI audio API with streaming response and retry logic.
-    Raises exception if all retries fail.
-    """
-    with client.audio.speech.with_streaming_response.create(
-        model=audio_model,
-        voice=audio_voice,
-        input=text,
-        response_format=audio_format,
-    ) as resp:
-        resp.stream_to_file(str(fname))
-
-
-def _call_openai_audio_non_streaming(
-    client: OpenAI, audio_model: str, audio_voice: str, text: str
-) -> bytes:
-    """
-    Call OpenAI audio API without streaming and retry logic.
-    Returns audio bytes. Raises exception if all retries fail.
-    """
-    resp = client.audio.speech.create(
-        model=audio_model,
-        voice=audio_voice,
-        input=text,
-        response_format=audio_format,
-    )
-    return resp.read() if hasattr(resp, "read") else resp.content
-
-
-def _call_openai_image(client: OpenAI, image_model: str, prompt: str, size: str):
-    """
-    Call OpenAI images API with retry logic.
-    Returns API result. Raises exception if all retries fail.
-    """
-    return client.images.generate(
-        model=image_model,
-        prompt=prompt,
-        size=size,
-    )
 
 
 @app.task
@@ -189,7 +76,7 @@ def generate_audio_task(
 
     try:
         # Preferred: streaming writer (efficient for larger outputs)
-        _call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
+        call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
         if verbosity >= 2:
             print(f"[synth] Successfully created: {fname}")
         return {"status": "success", "file": fname}
@@ -204,7 +91,7 @@ def generate_audio_task(
     except Exception as e:
         # Fallback to non-streaming API or models that don't support streaming in current SDK
         try:
-            audio_bytes = _call_openai_audio_non_streaming(
+            audio_bytes = call_openai_audio_non_streaming(
                 client, audio_model, audio_voice, text
             )
             with open(fname, "wb") as f:
@@ -305,7 +192,7 @@ def generate_image_task(
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     try:
-        result = _call_openai_image(client, image_model, prompt, size)
+        result = call_openai_image(client, image_model, prompt, size)
         # OpenAI Images API returns base64 JSON in data[0].b64_json
         b64 = result.data[0].b64_json if hasattr(result.data[0], "b64_json") else None
         if not b64:
@@ -327,7 +214,6 @@ def generate_image_task(
         if verbosity >= 1:
             print(f"[generate_image] OpenAI error: {oe}")
         return {"status": "error", "file": fname, "error": str(oe)}
-
     except Exception as e:
         if verbosity >= 1:
             print(f"[generate_image] {text} Error: {e}")
@@ -456,7 +342,7 @@ def main():
     if not args.dryrun:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    db = SQLiteDictionary()
+    db = Dictionary()
     words = db.get_all_words()  # List[str]
 
     if args.verbosity >= 1:
@@ -485,35 +371,37 @@ def main():
                     )
                     job_count += 1
 
-                    # Enqueue definition audios
+                    # Enqueue definition audios (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_audio_task.delay(
-                            text=sd.definition,
-                            fname=os.path.join(
-                                args.outdir,
-                                f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                            ),
-                            audio_model=args.audio_model,
-                            audio_voice=args.audio_voice,
-                            verbosity=args.verbosity,
-                            dryrun=args.dryrun,
-                        )
-                        job_count += 1
+                        for i in range(2):
+                            generate_audio_task.delay(
+                                text=sd.definition,
+                                fname=os.path.join(
+                                    args.outdir,
+                                    f"shortdef_{sd.uuid}_{sd.id}_{i}.{audio_format}",
+                                ),
+                                audio_model=args.audio_model,
+                                audio_voice=args.audio_voice,
+                                verbosity=args.verbosity,
+                                dryrun=args.dryrun,
+                            )
+                            job_count += 1
 
                 if not args.no_images:
-                    # Enqueue definition images
+                    # Enqueue definition images (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_image_task.delay(
-                            text=sd.definition,
-                            fname=os.path.join(
-                                args.outdir, f"image_{sd.uuid}_{sd.id}.{image_format}"
-                            ),
-                            image_model=args.image_model,
-                            image_size=args.image_size,
-                            verbosity=args.verbosity,
-                            dryrun=args.dryrun,
-                        )
-                        job_count += 1
+                        for i in range(2):
+                            generate_image_task.delay(
+                                text=sd.definition,
+                                fname=os.path.join(
+                                    args.outdir, f"image_{sd.uuid}_{sd.id}_{i}.{image_format}"
+                                ),
+                                image_model=args.image_model,
+                                image_size=args.image_size,
+                                verbosity=args.verbosity,
+                                dryrun=args.dryrun,
+                            )
+                            job_count += 1
 
         db.close()
         if args.verbosity >= 1:
@@ -565,40 +453,42 @@ def main():
                         )
                         progress.advance(asset_task)
 
-                        # synthesize each short definition for this sense
+                        # synthesize each short definition for this sense (2 variants: i=0, i=1)
                         for i, sd in enumerate(db.get_shortdefs(uuid), 1):
-                            progress.update(
-                                asset_task,
-                                description=f"[green]  └─ {w.word} (audio: def {i})",
-                            )
-                            generate_audio(
-                                client,
-                                sd.definition,
-                                os.path.join(
-                                    args.outdir,
-                                    f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                                ),
-                                args,
-                            )
-                            progress.advance(asset_task)
+                            for variant_i in range(2):
+                                progress.update(
+                                    asset_task,
+                                    description=f"[green]  └─ {w.word} (audio: def {i} variant {variant_i})",
+                                )
+                                generate_audio(
+                                    client,
+                                    sd.definition,
+                                    os.path.join(
+                                        args.outdir,
+                                        f"shortdef_{sd.uuid}_{sd.id}_{variant_i}.{audio_format}",
+                                    ),
+                                    args,
+                                )
+                                progress.advance(asset_task)
 
                     if not args.no_images:
-                        # Images for short definitions
+                        # Images for short definitions (2 variants: i=0, i=1)
                         for i, sd in enumerate(db.get_shortdefs(uuid), 1):
-                            progress.update(
-                                asset_task,
-                                description=f"[green]  └─ {w.word} (image: def {i})",
-                            )
-                            generate_image(
-                                client,
-                                sd.definition,
-                                os.path.join(
-                                    args.outdir,
-                                    f"image_{sd.uuid}_{sd.id}.{image_format}",
-                                ),
-                                args,
-                            )
-                            progress.advance(asset_task)
+                            for variant_i in range(2):
+                                progress.update(
+                                    asset_task,
+                                    description=f"[green]  └─ {w.word} (image: def {i} variant {variant_i})",
+                                )
+                                generate_image(
+                                    client,
+                                    sd.definition,
+                                    os.path.join(
+                                        args.outdir,
+                                        f"image_{sd.uuid}_{sd.id}_{variant_i}.{image_format}",
+                                    ),
+                                    args,
+                                )
+                                progress.advance(asset_task)
 
                 progress.remove_task(asset_task)
                 progress.advance(main_task)
@@ -619,29 +509,31 @@ def main():
                         args,
                     )
 
-                    # synthesize each short definition for this sense
+                    # synthesize each short definition for this sense (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_audio(
-                            client,
-                            sd.definition,
-                            os.path.join(
-                                args.outdir,
-                                f"shortdef_{sd.uuid}_{sd.id}.{audio_format}",
-                            ),
-                            args,
-                        )
+                        for i in range(2):
+                            generate_audio(
+                                client,
+                                sd.definition,
+                                os.path.join(
+                                    args.outdir,
+                                    f"shortdef_{sd.uuid}_{sd.id}_{i}.{audio_format}",
+                                ),
+                                args,
+                            )
 
                 if not args.no_images:
-                    # Images for short definitions
+                    # Images for short definitions (2 variants: i=0, i=1)
                     for sd in db.get_shortdefs(uuid):
-                        generate_image(
-                            client,
-                            sd.definition,
-                            os.path.join(
-                                args.outdir, f"image_{sd.uuid}_{sd.id}.{image_format}"
-                            ),
-                            args,
-                        )
+                        for i in range(2):
+                            generate_image(
+                                client,
+                                sd.definition,
+                                os.path.join(
+                                    args.outdir, f"image_{sd.uuid}_{sd.id}_{i}.{image_format}"
+                                ),
+                                args,
+                            )
 
     db.close()
 

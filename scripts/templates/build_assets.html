@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Build Assets</h1>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="alert alert-info">
+                        <strong>Database Backend:</strong> {{ backend }}
+                    </div>
+                    
+                    <h5>Processing Limit</h5>
+                    <div class="mb-3">
+                        <label for="limit" class="form-label">Number of Words to Process</label>
+                        <input type="number" class="form-control" name="limit" id="limit" value="0" min="0">
+                        <small class="text-muted">0 = process all words (unlimited). 1 = process only first word, etc.</small>
+                    </div>
+                    
+                    <h5>Audio Options</h5>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="generate_audio" id="generate_audio" value="1">
+                            <label class="form-check-label" for="generate_audio">
+                                Generate Audio
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="audio_model" class="form-label">Audio Model</label>
+                            <select name="audio_model" id="audio_model" class="form-select">
+                                {% for m in tts_models %}
+                                <option value="{{ m }}" {% if m == 'gpt-4o-mini-tts' %}selected{% endif %}>{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="audio_voice" class="form-label">Voice</label>
+                            <select name="audio_voice" id="audio_voice" class="form-select">
+                                {% for v in voices %}
+                                <option value="{{ v }}" {% if v == 'alloy' %}selected{% endif %}>{{ v }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <h5>Image Options</h5>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="generate_images" id="generate_images" value="1">
+                            <label class="form-check-label" for="generate_images">
+                                Generate Images
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="image_model" class="form-label">Image Model</label>
+                            <select name="image_model" id="image_model" class="form-select">
+                                {% for m in image_models %}
+                                <option value="{{ m }}" {% if m == 'gpt-image-1' %}selected{% endif %}>{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="image_size" class="form-label">Image Size</label>
+                            <select name="image_size" id="image_size" class="form-select">
+                                {% for s in image_sizes %}
+                                <option value="{{ s }}" {% if s == 'vertical' %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <h5>Output Options</h5>
+                    <div class="mb-3">
+                        <label for="outdir" class="form-label">Output Directory</label>
+                        <input type="text" class="form-control" name="outdir" id="outdir" value="{{ outdir }}">
+                        <small class="text-muted">Directory where assets will be saved</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-play-fill"></i> Start Build
+                    </button>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Information</h5>
+                <p>This will generate audio and image assets for all words in the database.</p>
+                <ul>
+                    <li>Audio files will be generated using OpenAI TTS</li>
+                    <li>Images will be generated using DALL-E</li>
+                    <li>Assets will be saved to the specified output directory</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

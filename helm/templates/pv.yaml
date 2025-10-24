@@ -1,0 +1,29 @@
+{{- if .Values.pvc.smb.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: honeyspeak-builder-pv
+  labels:
+    app: honeyspeak-builder
+spec:
+  capacity:
+    storage: {{ .Values.pvc.storage | default "10Gi" }}
+  accessModes:
+    - {{ .Values.pvc.accessMode | default "ReadWriteOnce" }}
+  persistentVolumeReclaimPolicy: Retain
+  {{- if .Values.pvc.smb.mountOptions }}
+  mountOptions:
+  {{- range .Values.pvc.smb.mountOptions }}
+    - {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  csi:
+    driver: smb.csi.k8s.io
+    volumeHandle: honeyspeak-builder-smb
+    volumeAttributes:
+      source: "//{{ .Values.pvc.smb.server }}/{{ .Values.pvc.smb.share }}"
+    nodeStageSecretRef:
+      name: honeyspeak-builder-smb-secret
+      namespace: {{ .Release.Namespace }}
+{{- end }}
+

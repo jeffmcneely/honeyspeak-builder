@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Build Tests</h2>
+  <form id="test-form">
+    <div class="mb-3">
+      <label for="test-name" class="form-label">Test Type</label>
+      <select id="test-name" class="form-select">
+        <option value="">Loading...</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label for="question-prompt" class="form-label">Sentence (Question Prompt)</label>
+      <textarea id="question-prompt" class="form-control" rows="2"></textarea>
+    </div>
+    <button type="button" id="add-question" class="btn btn-primary mb-3">Add Question</button>
+  </form>
+  <div id="question-status" class="mb-4"></div>
+  <div class="row">
+    <div class="col-md-6">
+      <h5>Correct Answers</h5>
+  <div class="btn-group mb-2 answer-btn-group" role="group">
+        <button class="btn btn-outline-secondary answer-btn" data-group="correct" data-label="proper noun">Proper Noun</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="correct" data-label="noun">Noun</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="correct" data-label="adjective">Adjective</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="correct" data-label="verb">Verb</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="correct" data-label="adverb">Adverb</button>
+      </div>
+  <div id="correct-answers-cloud" class="tag-cloud border p-2"></div>
+    </div>
+    <div class="col-md-6">
+      <h5>Incorrect Answers</h5>
+  <div class="btn-group mb-2 answer-btn-group" role="group">
+        <button class="btn btn-outline-secondary answer-btn" data-group="incorrect" data-label="proper noun">Proper Noun</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="incorrect" data-label="noun">Noun</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="incorrect" data-label="adjective">Adjective</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="incorrect" data-label="verb">Verb</button>
+        <button class="btn btn-outline-secondary answer-btn" data-group="incorrect" data-label="adverb">Adverb</button>
+      </div>
+  <div id="incorrect-answers-cloud" class="tag-cloud border p-2"></div>
+    </div>
+  </div>
+</div>
+<!-- jQuery CDN (add before your script) -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+let currentQuestionId = null;
+
+
+function loadTestNames() {
+  $.get('/build_tests/get_tests', function(data) {
+    if (data.success) {
+      let html = '';
+      data.tests.forEach(function(test) {
+        html += `<option value="${test.id}">${test.name}</option>`;
+      });
+      $('#test-name').html(html);
+    } else {
+      $('#test-name').html('<option value="">Error loading tests</option>');
+    }
+  });
+}
+
+$(function() {
+  loadTestNames();
+
+  $('#add-question').click(function() {
+    const prompt = $('#question-prompt').val().trim();
+    const testId = $('#test-name').val();
+    if (!prompt) return alert('Please enter a sentence.');
+    if (!testId) return alert('Please select a test.');
+    $.post('/build_tests/add_question', { prompt, test_id: testId }, function(data) {
+      if (data.success) {
+        currentQuestionId = data.question_id;
+        $('#question-status').html('<span class="text-success">Question added. Now select answers.</span>');
+        $('#correct-answers-cloud, #incorrect-answers-cloud').empty();
+      } else {
+        $('#question-status').html('<span class="text-danger">' + data.error + '</span>');
+      }
+    });
+  });
+
+  $('.answer-btn').click(function() {
+    if (!currentQuestionId) return alert('Add a question first.');
+    const group = $(this).data('group');
+    const label = $(this).data('label');
+    const count = group === 'correct' ? 100 : 400;
+    const target = group === 'correct' ? '#correct-answers-cloud' : '#incorrect-answers-cloud';
+    
+    // Remove active class from all buttons in this group, add to clicked button
+    $(this).siblings('.answer-btn[data-group="' + group + '"]').removeClass('btn-primary').addClass('btn-outline-secondary');
+    $(this).removeClass('btn-outline-secondary').addClass('btn-primary');
+    
+    $(target).html('<em>Loading...</em>');
+    $.get('/build_tests/get_words', { label, count }, function(data) {
+      if (data.success) {
+        let html = '';
+        data.words.forEach(word => {
+          html += `<span class="tag-word" data-word="${word}" style="cursor:pointer; margin:2px; display:inline-block;">${word}</span>`;
+        });
+        $(target).html(html);
+      } else {
+        $(target).html('<span class="text-danger">' + data.error + '</span>');
+      }
+    });
+  });
+
+  $(document).on('click', '.tag-cloud .tag-word', function() {
+    if (!currentQuestionId) return alert('Add a question first.');
+    const word = $(this).data('word');
+    const group = $(this).closest('.tag-cloud').attr('id') === 'correct-answers-cloud' ? 'correct' : 'incorrect';
+    const is_correct = group === 'correct' ? 1 : 0;
+    const $el = $(this);
+    $.post('/build_tests/add_answer', { question_id: currentQuestionId, word, is_correct }, function(data) {
+      if (data.success) {
+        $el.css('background', is_correct ? '#a5d6a7' : '#ef9a9a');
+      } else {
+        alert(data.error);
+      }
+    });
+  });
+});
+</script>
+<style>
+.answer-btn-group { margin-bottom: 0.5rem; flex-wrap: wrap; }
+.tag-cloud {
+  min-height: 40px;
+  background: #f8f9fa;
+  height: 400px;
+  overflow-y: auto;
+  clear: both;
+  margin-bottom: 1rem;
+}
+.tag-word { padding: 2px 8px; border-radius: 12px; background: #e0e0e0; transition: background 0.2s; margin: 2px; display: inline-block; }
+.tag-word:hover { background: #bdbdbd; }
+</style>
+{% endblock %}
