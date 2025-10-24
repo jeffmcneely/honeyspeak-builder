@@ -515,6 +515,7 @@ def database_status():
 def build_dictionary():
     if request.method == "POST":
         wordlist = request.files.get("wordlist")
+        level = request.form.get("level", "none")
         
         if not wordlist:
             flash("No wordlist uploaded", "error")
@@ -541,8 +542,9 @@ def build_dictionary():
         db_path = None  # Let Dictionary class decide based on environment
         
         # Enqueue task using send_task with full task name
-        task = celery.send_task("scripts.celery_tasks.process_wordlist", args=[words, db_path, api_key])
-        flash(f"Dictionary build started with {len(words)} words (task id: {task.id})", "info")
+        task = celery.send_task("scripts.celery_tasks.process_wordlist", args=[words, db_path, api_key, level])
+        level_msg = f" (level: {level.upper()})" if level != "none" else ""
+        flash(f"Dictionary build started with {len(words)} words{level_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
     backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"

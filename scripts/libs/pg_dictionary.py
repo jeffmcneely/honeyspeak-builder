@@ -147,7 +147,7 @@ class PostgresDictionary:
         finally:
             conn.close()
     
-    def add_word(self, word: str, functional_label: Optional[str] = None, uuid_: Optional[str] = None, flags: int = 0) -> str:
+    def add_word(self, word: str, level: str, functional_label: Optional[str] = None, uuid_: Optional[str] = None, flags: int = 0) -> str:
         """
         Add a word to the dictionary.
         
@@ -160,10 +160,10 @@ class PostgresDictionary:
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO words (word, functional_label, uuid, flags) 
-                       VALUES (%s, %s, %s, %s)
+                    """INSERT INTO words (word, level, functional_label, uuid, flags) 
+                       VALUES (%s, %s, %s, %s, %s)
                        ON CONFLICT (uuid) DO NOTHING""",
-                    (word, functional_label, word_uuid, flags)
+                    (word, level, functional_label, word_uuid, flags)
                 )
                 conn.commit()
         except Exception as e:

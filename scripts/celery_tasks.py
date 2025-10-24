@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from celery import Celery, Task
 from celery.utils.log import get_task_logger
 from datetime import datetime
+import re
 
 # Add scripts directory to path so we can import libs
 script_dir = Path(__file__).parent
@@ -89,6 +90,8 @@ app.conf.update(
 def fetch_and_process_word(
     self,
     word: str,
+    function_label: str,
+    level: str,
     db_path: str,
     api_key: str,
     usage_file: Optional[str] = None
@@ -127,7 +130,7 @@ def fetch_and_process_word(
     results = []
     for entry in data:
         if isinstance(entry, dict):
-            success, message = process_api_entry(entry, db_path)
+            success, message = process_api_entry(entry, function_label, level, db_path)
             results.append({"success": success, "message": message})
             logger.info(f"Entry result: {message}")
     
@@ -164,13 +167,38 @@ def process_wordlist(
     logger.info(f"Processing {len(wordlist)} words")
     
     results = []
-    for i, word in enumerate(wordlist):
-        logger.info(f"Progress: {i+1}/{len(wordlist)} - {word}")
-        result = fetch_and_process_word(word, db_path, api_key)
-        results.append(result)
-        
-        # Update task progress
-        self.update_state(
+    for line in wordlist:
+        word = line.strip()
+        match = re.match(r"^([a-zA-Z ]+) ([a-z./, ]+)$", word)
+        if not match:
+            continue
+        word = match.group(1)
+        for function_label_abbreviation in match.group(2).split(","):
+            match function_label_abbreviation:
+                case 'n.':
+                    fun_label = 'noun'
+                case 'v.':
+                    fun_label = 'verb'
+                case 'adj.':
+                    fun_label = 'adjective'
+                case 'adv.':
+                    fun_label = 'adverb'
+                case 'prep.':
+                    fun_label = 'preposition'
+                case 'conj.':
+                    fun_label = 'conjunction'
+                case 'interj.':
+                    fun_label = 'interjection'
+                case 'pron.':
+                    fun_label = 'pronoun'
+                case _:
+                    fun_label = function_label_abbreviation
+            logger.info(f"Progress: {word}")
+            result = fetch_and_process_word(word, fun_label, db_path, api_key)
+            results.append(result)
+
+            # Update task progress
+            self.update_state(
             state='PROGRESS',
             meta={'current': i+1, 'total': len(wordlist), 'word': word}
         )
