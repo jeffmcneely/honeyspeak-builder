@@ -151,7 +151,8 @@ def process_wordlist(
     self,
     wordlist: List[str],
     db_path: str,
-    api_key: str
+    api_key: str,
+    level: str = "A1"
 ) -> Dict:
     """
     Process a list of words.
@@ -167,7 +168,7 @@ def process_wordlist(
     logger.info(f"Processing {len(wordlist)} words")
     
     results = []
-    for line in wordlist:
+    for i, line in enumerate(wordlist):
         word = line.strip()
         match = re.match(r"^([a-zA-Z ]+) ([a-z./, ]+)$", word)
         if not match:
@@ -193,15 +194,15 @@ def process_wordlist(
                     fun_label = 'pronoun'
                 case _:
                     fun_label = function_label_abbreviation
-            logger.info(f"Progress: {word}")
-            result = fetch_and_process_word(word, fun_label, db_path, api_key)
+            logger.info(f"Progress: {i+1}/{len(wordlist)} - {word}")
+            result = fetch_and_process_word(word, fun_label, level, db_path, api_key)
             results.append(result)
 
             # Update task progress
             self.update_state(
-            state='PROGRESS',
-            meta={'current': i+1, 'total': len(wordlist), 'word': word}
-        )
+                state='PROGRESS',
+                meta={'current': i+1, 'total': len(wordlist), 'word': word}
+            )
     
     total_count = get_word_count(db_path)
     
