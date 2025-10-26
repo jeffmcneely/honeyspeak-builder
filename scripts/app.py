@@ -1060,6 +1060,26 @@ def api_celery_status():
         scheduled_count = sum(len(tasks) for tasks in scheduled_tasks.values())
         reserved_count = sum(len(tasks) for tasks in reserved_tasks.values())
         
+        # Get actual pending tasks count from Redis broker
+        # Reserved tasks are limited by prefetch, so we need to check the broker queue
+        pending_count = 0
+        try:
+            import redis
+            # Get Redis connection from Celery broker URL
+            broker_url = celery.conf.broker_url
+            if broker_url and 'redis' in broker_url:
+                # Parse Redis URL
+                redis_client = redis.from_url(broker_url)
+                # Default Celery queue name is 'celery'
+                queue_name = 'celery'
+                # Get length of the queue in Redis
+                pending_count = redis_client.llen(queue_name)
+                redis_client.close()
+        except Exception as redis_error:
+            # If Redis inspection fails, fall back to reserved count
+            print(f"[api_celery_status] Redis queue inspection failed: {redis_error}")
+            pending_count = reserved_count
+        
         # Format active tasks for display
         formatted_active = []
         for worker, tasks in active_tasks.items():
@@ -1084,6 +1104,18 @@ def api_celery_status():
                     "eta": task.get("eta", "unknown"),
                 })
         
+        # Format reserved/pending tasks
+        formatted_reserved = []
+        for worker, tasks in reserved_tasks.items():
+            for task in tasks:
+                formatted_reserved.append({
+                    "worker": worker,
+                    "name": task.get("name", "unknown"),
+                    "id": task.get("id", "unknown"),
+                    "args": str(task.get("args", [])),
+                    "kwargs": str(task.get("kwargs", {})),
+                })
+        
         # Get worker info
         workers = []
         for worker, worker_stats in stats.items():
@@ -1094,14 +1126,22 @@ def api_celery_status():
                 "max_concurrency": worker_stats.get("pool", {}).get("max-concurrency", 0),
             })
         
+        # Format registered tasks
+        formatted_registered = {}
+        for worker, tasks in registered_tasks.items():
+            formatted_registered[worker] = sorted(tasks) if tasks else []
+        
         return jsonify({
             "success": True,
             "workers": workers,
             "active_count": active_count,
             "scheduled_count": scheduled_count,
             "reserved_count": reserved_count,
+            "pending_count": pending_count,
             "active_tasks": formatted_active,
             "scheduled_tasks": formatted_scheduled,
+            "reserved_tasks": formatted_reserved,
+            "registered_tasks": formatted_registered,
             "timestamp": __import__("time").time(),
         })
     
@@ -1113,8 +1153,11 @@ def api_celery_status():
             "active_count": 0,
             "scheduled_count": 0,
             "reserved_count": 0,
+            "pending_count": 0,
             "active_tasks": [],
             "scheduled_tasks": [],
+            "reserved_tasks": [],
+            "registered_tasks": {},
         }), 500
 
 

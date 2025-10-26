@@ -111,31 +111,39 @@
         </div>
 
         <div class="row mb-4">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="card status-card">
                     <div class="card-body text-center">
                         <div class="metric-value text-primary" id="activeCount">-</div>
-                        <div class="metric-label">Active Tasks</div>
+                        <div class="metric-label">Active</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card status-card warning">
+            <div class="col-md-2">
+                <div class="card status-card danger">
                     <div class="card-body text-center">
-                        <div class="metric-value text-warning" id="scheduledCount">-</div>
-                        <div class="metric-label">Scheduled Tasks</div>
+                        <div class="metric-value text-danger" id="pendingCount">-</div>
+                        <div class="metric-label">Pending</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="card status-card">
                     <div class="card-body text-center">
                         <div class="metric-value text-info" id="reservedCount">-</div>
-                        <div class="metric-label">Reserved Tasks</div>
+                        <div class="metric-label">Reserved</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <div class="card status-card warning">
+                    <div class="card-body text-center">
+                        <div class="metric-value text-warning" id="scheduledCount">-</div>
+                        <div class="metric-label">Scheduled</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
                 <div class="card status-card success">
                     <div class="card-body text-center">
                         <div class="metric-value text-success" id="workerCount">-</div>
@@ -189,6 +197,19 @@
                 </div>
             </div>
         </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-check"></i> Registered Tasks</h5>
+            </div>
+            <div class="card-body" id="registeredTasksContainer">
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -198,7 +219,10 @@
 
         function updateCountdown() {
             countdownSeconds--;
-            document.getElementById('countdown').textContent = countdownSeconds;
+            const countdownElement = document.getElementById('countdown');
+            if (countdownElement) {
+                countdownElement.textContent = countdownSeconds;
+            }
             
             if (countdownSeconds <= 0) {
                 countdownSeconds = 30;
@@ -213,7 +237,10 @@
             
             // Reset countdown
             countdownSeconds = 30;
-            document.getElementById('countdown').textContent = countdownSeconds;
+            const countdownElement = document.getElementById('countdown');
+            if (countdownElement) {
+                countdownElement.textContent = countdownSeconds;
+            }
             
             // Start countdown
             countdownInterval = setInterval(updateCountdown, 1000);
@@ -261,6 +288,7 @@
         function updateUI(data) {
             // Update metrics
             document.getElementById('activeCount').textContent = data.active_count;
+            document.getElementById('pendingCount').textContent = data.pending_count;
             document.getElementById('scheduledCount').textContent = data.scheduled_count;
             document.getElementById('reservedCount').textContent = data.reserved_count;
             document.getElementById('workerCount').textContent = data.workers.length;
@@ -320,6 +348,28 @@
                             <div class="task-id mt-1">ID: ${task.id}</div>
                         </div>
                         <span class="badge bg-warning text-dark">${task.eta}</span>
+                    </div>
+                `).join('');
+            }
+            
+            // Update registered tasks
+            const registeredContainer = document.getElementById('registeredTasksContainer');
+            if (!data.registered_tasks || Object.keys(data.registered_tasks).length === 0) {
+                registeredContainer.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-exclamation-circle"></i> No registered tasks found</p>';
+            } else {
+                registeredContainer.innerHTML = Object.entries(data.registered_tasks).map(([worker, tasks]) => `
+                    <div class="mb-3">
+                        <h6 class="text-primary mb-2">
+                            <i class="bi bi-person-workspace"></i> ${worker}
+                            <span class="badge bg-secondary ms-2">${tasks.length} tasks</span>
+                        </h6>
+                        <div class="ms-3">
+                            ${tasks.map(task => `
+                                <div class="task-id mb-1">
+                                    <i class="bi bi-dot"></i> ${task}
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 `).join('');
             }
