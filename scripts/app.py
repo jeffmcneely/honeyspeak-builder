@@ -1088,14 +1088,33 @@ def api_celery_status():
         formatted_active = []
         for worker, tasks in active_tasks.items():
             for task in tasks:
-                formatted_active.append({
+                task_id = task.get("id", "unknown")
+                task_info = {
                     "worker": worker,
                     "name": task.get("name", "unknown"),
-                    "id": task.get("id", "unknown"),
+                    "id": task_id,
                     "args": str(task.get("args", [])),
                     "kwargs": str(task.get("kwargs", {})),
                     "time_start": task.get("time_start", 0),
-                })
+                    "progress": None
+                }
+                
+                # Try to get progress info for this task
+                try:
+                    if task_id != "unknown":
+                        res = celery.AsyncResult(task_id)
+                        if res.state == 'PROGRESS' and res.info:
+                            task_info["progress"] = {
+                                "current": res.info.get("current", 0),
+                                "total": res.info.get("total", 0),
+                                "percent": int((res.info.get("current", 0) / res.info.get("total", 1)) * 100) if res.info.get("total", 0) > 0 else 0,
+                                "word": res.info.get("word", "")
+                            }
+                except Exception as progress_error:
+                    # If we can't get progress, just continue without it
+                    pass
+                
+                formatted_active.append(task_info)
         
         # Format scheduled tasks
         formatted_scheduled = []

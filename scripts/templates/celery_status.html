@@ -82,6 +82,19 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
+        .progress {
+            height: 20px;
+            margin-top: 8px;
+        }
+        .progress-bar {
+            font-size: 0.75rem;
+            line-height: 20px;
+        }
+        .progress-info {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -377,22 +390,50 @@
             if (data.active_tasks.length === 0) {
                 activeContainer.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-check-circle"></i> No active tasks</p>';
             } else {
-                activeContainer.innerHTML = data.active_tasks.map(task => `
-                    <div class="task-row">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <strong>${task.name}</strong>
-                                <span class="badge bg-primary ms-2">${task.worker}</span>
-                                <div class="task-id mt-1">ID: ${task.id}</div>
-                                ${task.args && task.args !== '[]' ? `<div class="task-args">Args: ${task.args}</div>` : ''}
-                                ${task.kwargs && task.kwargs !== '{}' ? `<div class="task-args">Kwargs: ${task.kwargs}</div>` : ''}
+                activeContainer.innerHTML = data.active_tasks.map(task => {
+                    let progressHtml = '';
+                    if (task.progress) {
+                        const percent = task.progress.percent || 0;
+                        const current = task.progress.current || 0;
+                        const total = task.progress.total || 0;
+                        const word = task.progress.word || '';
+                        
+                        progressHtml = `
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     style="width: ${percent}%"
+                                     aria-valuenow="${percent}" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">
+                                    ${percent}%
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <span class="badge bg-info">Running</span>
+                            <div class="progress-info">
+                                <i class="bi bi-arrow-right-circle"></i> ${current} / ${total}
+                                ${word ? ` - ${word}` : ''}
+                            </div>
+                        `;
+                    }
+                    
+                    return `
+                        <div class="task-row">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <strong>${task.name}</strong>
+                                    <span class="badge bg-primary ms-2">${task.worker}</span>
+                                    <div class="task-id mt-1">ID: ${task.id}</div>
+                                    ${task.args && task.args !== '[]' ? `<div class="task-args">Args: ${task.args}</div>` : ''}
+                                    ${task.kwargs && task.kwargs !== '{}' ? `<div class="task-args">Kwargs: ${task.kwargs}</div>` : ''}
+                                    ${progressHtml}
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-info">Running</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
             
             // Update scheduled tasks
