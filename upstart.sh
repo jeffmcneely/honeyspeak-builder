@@ -414,6 +414,77 @@ case "${ARGS[0]:-}" in
     deploy)
         deploy_to_kubernetes
         ;;
+    deploy-app)
+        # Restart celery and flask deployments only
+        CURRENT_STEP=0
+        TOTAL_STEPS=1
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}║${NC}        ${GREEN}Restarting App Deployments${NC}                       ${CYAN}║${NC}"
+            echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+        else
+            echo -e "${GREEN}Restarting App Deployments${NC}"
+        fi
+
+        print_step $TOTAL_STEPS "Restarting Celery and Flask Deployments"
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            echo -n "  Restarting celery deployment... "
+        fi
+        
+        if kubectl rollout restart deployment -n honeyspeak -l app=celery > /dev/null 2>&1; then
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${GREEN}✓${NC}"
+                print_success "Celery deployment restarted"
+            fi
+        else
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${RED}✗${NC}"
+            fi
+            print_error "Failed to restart celery deployment"
+        fi
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo -n "  Restarting flask deployment... "
+        fi
+        
+        if kubectl rollout restart deployment -n honeyspeak -l app=flask > /dev/null 2>&1; then
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${GREEN}✓${NC}"
+                print_success "Flask deployment restarted"
+            fi
+        else
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${RED}✗${NC}"
+            fi
+            print_error "Failed to restart flask deployment"
+        fi
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            print_info "Current pod status:"
+            echo ""
+            kubectl get pods -n honeyspeak -l 'app in (celery,flask)' --no-headers | while read line; do
+                echo "  $line"
+            done
+            
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${GREEN}✓ Restart Complete!${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            echo -e "${BLUE}Useful commands:${NC}"
+            echo -e "  ${YELLOW}View Flask logs:${NC}   kubectl logs -f -n honeyspeak -l app=flask"
+            echo -e "  ${YELLOW}View Celery logs:${NC}  kubectl logs -f -n honeyspeak -l app=celery"
+            echo ""
+        else
+            echo -e "${GREEN}✓ Restart complete${NC}"
+        fi
+        ;;
     "")
         # No arguments - build and deploy
         build_image
@@ -426,6 +497,7 @@ case "${ARGS[0]:-}" in
         echo "  (no args)  Build Docker image and deploy to Kubernetes"
         echo "  build      Build and push Docker image only"
         echo "  deploy     Deploy to Kubernetes (Helm upgrade + rollout restart)"
+        echo "  deploy-app Restart celery and flask deployments only (no build or Helm upgrade)"
         echo "  help       Show this help message"
         echo ""
         echo "Options:"
@@ -438,6 +510,7 @@ case "${ARGS[0]:-}" in
         echo "  $0 build -q            # Build only with minimal output"
         echo "  $0 build --no-context  # Build without switching Docker context"
         echo "  $0 deploy --quiet      # Deploy only with minimal output"
+        echo "  $0 deploy-app          # Restart celery and flask deployments"
         echo ""
         exit 0
         ;;
