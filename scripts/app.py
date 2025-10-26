@@ -79,6 +79,7 @@ def list_package_files():
     pkg_dir = BASE_DIR / PACKAGE_DIR
     if not pkg_dir.exists():
         return []
+    return [f.name for f in pkg_dir.iterdir() if f.is_file()]
     
 
 # === Build Tests Page and AJAX Endpoints ===
@@ -591,7 +592,7 @@ def build_assets():
         generate_images = request.form.get("generate_images") == "1"
         audio_model = request.form.get("audio_model", "gpt-4o-mini-tts")
         audio_voice = request.form.get("audio_voice", "alloy")
-        image_model = request.form.get("image_model", "gpt-image-1")
+        image_model = request.form.get("image_model", "sdxl_turbo")
         image_size = request.form.get("image_size", "vertical")
         output_dir = request.form.get("outdir", ASSET_DIR)
         
