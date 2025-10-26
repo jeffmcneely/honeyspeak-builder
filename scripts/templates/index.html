@@ -1,31 +1,42 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Honeyspeak Builder</title>
-  <link rel="stylesheet" href="/static/index.css" />
-</head>
-<body>
-  <div class="container">
-    <h2>Honeyspeak Builder Dashboard</h2>
-    <h3>🔧 Database Management</h3>
-    <ul>
-      <li><a href="/database">📊 Database Management</a> - Unified database status, initialization, and statistics</li>
-    </ul>
-    <h3>📦 Build Pipeline</h3>
-    <ul>
-      <li><a href="/build_dictionary">Build Dictionary</a></li>
-      <li><a href="/build_assets">Build Assets</a></li>
-      <li><a href="/build_package">Build Package</a></li>
-      <li><a href="/download">Download Results</a></li>
-    </ul>
-    <h3>🛠️ Monitoring & Tools</h3>
-    <ul>
-      <li><a href="/celery_status">📊 Celery Queue Status</a> - Monitor background task queues and workers</li>
-      <li><a href="/moderator">🖼️ Image Moderator</a> - Review and moderate generated images</li>
-      <li><a href="/logs">📝 View Logs</a> - Browse and view application logs</li>
-    </ul>
+{% extends "base.html" %}
+
+{% block title %}Honeyspeak Builder{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h1>🍯 Honeyspeak Builder</h1>
+  <p class="lead">Welcome to the Honeyspeak Builder dashboard. Use the navigation bar above to access all tools and features.</p>
+  
+  <div class="row mt-4">
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">🔧 Database</h5>
+          <p class="card-text">Manage your dictionary database, view statistics, and search words.</p>
+          <a href="/database" class="btn btn-primary">Go to Database</a>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">📦 Build Pipeline</h5>
+          <p class="card-text">Build dictionary entries, generate assets, and create packages.</p>
+          <a href="/build_dictionary" class="btn btn-primary">Start Building</a>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">�️ Moderation</h5>
+          <p class="card-text">Review and moderate generated images for quality control.</p>
+          <a href="/moderator" class="btn btn-primary">Open Moderator</a>
+        </div>
+      </div>
+    </div>
   </div>
-</body>
-</html>
+</div>
+{% endblock %}

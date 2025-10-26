@@ -418,7 +418,22 @@ def generate_all_assets(
     logger.info(f"[CELERY DEBUG] Output directory exists: {Path(output_dir).exists()}")
     logger.info(f"[CELERY DEBUG] Absolute output path: {Path(output_dir).resolve()}")
     
+    # Load existing filenames once at the start
+    logger.info("Scanning output directory for existing assets...")
+    existing_files = set()
+    try:
+        if os.path.exists(output_dir):
+            existing_files = {f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))}
+            logger.info(f"Found {len(existing_files)} existing asset files")
+        else:
+            logger.info("Output directory does not exist yet, no existing files")
+    except Exception as e:
+        logger.warning(f"Error scanning output directory: {e}")
+    
     results = []
+    tasks_queued = 0
+    tasks_skipped = 0
+    
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
         
@@ -428,12 +443,58 @@ def generate_all_assets(
         db.close()
         
         for uuid in uuids:
-            result = generate_assets_for_word(
-                word.word, uuid, db_path, output_dir,
-                generate_audio, generate_images,
-                audio_model, audio_voice, image_model, image_size
-            )
-            results.append(result)
+            # Get definitions to check which assets would be generated
+            db = Dictionary(db_path)
+            definitions = db.get_shortdefs(uuid)
+            db.close()
+            
+            word_result = {"word": word.word, "uuid": uuid, "word_audio": None, "definitions": []}
+            
+            # Check word audio
+            word_audio_file = f"word_{uuid}_0.aac"
+            if word_audio_file not in existing_files and generate_audio:
+                audio_task = generate_word_audio_task.delay(
+                    word.word, uuid, output_dir, audio_model, audio_voice
+                )
+                word_result["word_audio"] = {"task_id": audio_task.id, "status": "queued"}
+                tasks_queued += 1
+            else:
+                word_result["word_audio"] = {"status": "skipped", "reason": "exists"}
+                tasks_skipped += 1
+            
+            # Check definition assets
+            for defn in definitions:
+                def_results = {"id": defn.id, "audio_tasks": [], "image_tasks": []}
+                
+                # Check 2 variants of each asset (i=0, i=1)
+                for variant_i in range(2):
+                    # Check definition audio
+                    def_audio_file = f"shortdef_{uuid}_{defn.id}_{variant_i}.aac"
+                    if def_audio_file not in existing_files and generate_audio:
+                        audio_task = generate_definition_audio_task.delay(
+                            defn.definition, uuid, defn.id, output_dir, variant_i, audio_model, audio_voice
+                        )
+                        def_results["audio_tasks"].append({"i": variant_i, "task_id": audio_task.id, "status": "queued"})
+                        tasks_queued += 1
+                    else:
+                        def_results["audio_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
+                        tasks_skipped += 1
+                    
+                    # Check definition image
+                    def_image_file = f"image_{uuid}_{defn.id}_{variant_i}.png"
+                    if def_image_file not in existing_files and generate_images:
+                        image_task = generate_definition_image_task.delay(
+                            defn.definition, uuid, defn.id, output_dir, word.word, variant_i, image_model, image_size
+                        )
+                        def_results["image_tasks"].append({"i": variant_i, "task_id": image_task.id, "status": "queued"})
+                        tasks_queued += 1
+                    else:
+                        def_results["image_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
+                        tasks_skipped += 1
+                
+                word_result["definitions"].append(def_results)
+            
+            results.append(word_result)
         
         # Update task progress
         self.update_state(
@@ -442,11 +503,14 @@ def generate_all_assets(
         )
     
     logger.info(f"Asset generation complete: {len(results)} word entries processed")
+    logger.info(f"Tasks queued: {tasks_queued}, Tasks skipped (existing): {tasks_skipped}")
     
     return {
         "status": "success",
         "words_processed": len(words),
         "entries_processed": len(results),
+        "tasks_queued": tasks_queued,
+        "tasks_skipped": tasks_skipped,
         "output_dir": output_dir
     }
 
