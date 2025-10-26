@@ -132,6 +132,9 @@
       <div class="d-flex align-items-center mb-2">
         <strong class="me-2">Filter by letter:</strong>
         <button class="btn btn-sm btn-outline-secondary" onclick="clearFilter()">Clear</button>
+        <button class="btn btn-sm btn-outline-info ms-2" onclick="refreshCache()" title="Rescan asset directory and refresh cache">
+          🔄 Refresh Cache
+        </button>
       </div>
       <div id="letter-buttons">
         <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('a')">A</button>
@@ -242,6 +245,25 @@
         document.getElementById('loading').style.display = 'none';
         document.getElementById('definitions-list').style.display = 'none';
         document.getElementById('no-filter-message').style.display = 'block';
+      }
+      
+      async function refreshCache() {
+        try {
+          const resp = await fetch('/moderator/api/refresh-cache', { method: 'POST' });
+          const data = await resp.json();
+          if (data.ok) {
+            alert(`Cache refreshed! ${data.images_cached} images found.`);
+            // Reload current view if a letter is selected
+            if (currentLetter) {
+              loadDefinitions(currentLetter);
+            }
+          } else {
+            alert('Failed to refresh cache: ' + (data.error || 'Unknown error'));
+          }
+        } catch (e) {
+          console.error('Error refreshing cache:', e);
+          alert('Error refreshing cache');
+        }
       }
       
       function createDefinitionItem(def) {

@@ -256,9 +256,25 @@ def generate_definition_audio_task(
     audio_voice: str = "alloy"
 ) -> Dict:
     """Generate audio for a definition."""
+    import time
+    start_time = time.time()
+    
     logger.info(f"Generating definition audio: {uuid}_{def_id}_{i}")
     result = generate_definition_audio(definition, uuid, def_id, output_dir, i, audio_model, audio_voice)
-    logger.info(f"Definition audio result: {result['status']}")
+    
+    elapsed_time = time.time() - start_time
+    result['elapsed_time'] = elapsed_time
+    logger.info(f"Definition audio result: {result['status']} (took {elapsed_time:.2f}s)")
+    
+    # Store timing in Redis for estimations
+    try:
+        from celery import current_app
+        redis_client = current_app.broker_connection().channel().client
+        redis_client.lpush('task_times:generate_definition_audio', elapsed_time)
+        redis_client.ltrim('task_times:generate_definition_audio', 0, 99)  # Keep last 100
+    except Exception as e:
+        logger.debug(f"Could not store timing: {e}")
+    
     return result
 
 
@@ -275,9 +291,25 @@ def generate_definition_image_task(
     image_size: str = "vertical"
 ) -> Dict:
     """Generate image for a definition."""
+    import time
+    start_time = time.time()
+    
     logger.info(f"Generating definition image: {uuid}_{def_id}_{i}")
     result = generate_definition_image(definition, uuid, def_id, output_dir, word, i, image_model, image_size)
-    logger.info(f"Definition image result: {result['status']}")
+    
+    elapsed_time = time.time() - start_time
+    result['elapsed_time'] = elapsed_time
+    logger.info(f"Definition image result: {result['status']} (took {elapsed_time:.2f}s)")
+    
+    # Store timing in Redis for estimations
+    try:
+        from celery import current_app
+        redis_client = current_app.broker_connection().channel().client
+        redis_client.lpush('task_times:generate_definition_image', elapsed_time)
+        redis_client.ltrim('task_times:generate_definition_image', 0, 99)  # Keep last 100
+    except Exception as e:
+        logger.debug(f"Could not store timing: {e}")
+    
     return result
 
 

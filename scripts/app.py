@@ -55,8 +55,12 @@ try:
     from moderator import moderator_bp  # type: ignore
     app.register_blueprint(moderator_bp, url_prefix="/moderator")
     print("[APP DEBUG] Moderator blueprint registered at /moderator")
+    # Set the asset directory config for moderator
+    app.config["ASSET_DIRECTORY"] = ASSET_DIR
 except Exception as e:
     print(f"[APP DEBUG] Could not register moderator blueprint: {e}")
+    import traceback
+    traceback.print_exc()
 
 # Jinja2 custom filters
 @app.template_filter('filesizeformat')
@@ -1063,6 +1067,7 @@ def api_celery_status():
         # Get actual pending tasks count from Redis broker
         # Reserved tasks are limited by prefetch, so we need to check the broker queue
         pending_count = 0
+        redis_client = None
         try:
             import redis
             # Get Redis connection from Celery broker URL
@@ -1074,7 +1079,6 @@ def api_celery_status():
                 queue_name = 'celery'
                 # Get length of the queue in Redis
                 pending_count = redis_client.llen(queue_name)
-                redis_client.close()
         except Exception as redis_error:
             # If Redis inspection fails, fall back to reserved count
             print(f"[api_celery_status] Redis queue inspection failed: {redis_error}")
@@ -1131,6 +1135,82 @@ def api_celery_status():
         for worker, tasks in registered_tasks.items():
             formatted_registered[worker] = sorted(tasks) if tasks else []
         
+        # Calculate average task times and estimate time remaining
+        avg_audio_time = 0
+        avg_image_time = 0
+        estimated_time_remaining = 0
+        task_breakdown = {"audio": 0, "image": 0, "other": 0}
+        
+        if redis_client:
+            try:
+                # Get average times from stored timings
+                audio_times = redis_client.lrange('task_times:generate_definition_audio', 0, -1)
+                if audio_times:
+                    avg_audio_time = sum(float(t) for t in audio_times) / len(audio_times)
+                
+                image_times = redis_client.lrange('task_times:generate_definition_image', 0, -1)
+                if image_times:
+                    avg_image_time = sum(float(t) for t in image_times) / len(image_times)
+                
+                # Count task types in pending + reserved
+                all_waiting_tasks = []
+                for tasks in reserved_tasks.values():
+                    all_waiting_tasks.extend(tasks)
+                
+                # Also peek at pending tasks in the queue (if possible)
+                # For simplicity, we'll use task names from active/reserved to estimate distribution
+                for task in all_waiting_tasks:
+                    task_name = task.get('name', '')
+                    if 'audio' in task_name.lower():
+                        task_breakdown['audio'] += 1
+                    elif 'image' in task_name.lower():
+                        task_breakdown['image'] += 1
+                    else:
+                        task_breakdown['other'] += 1
+                
+                # Estimate remaining time based on pending count and task distribution
+                if pending_count > 0:
+                    # If we have task breakdown, use weighted average
+                    if task_breakdown['audio'] + task_breakdown['image'] > 0:
+                        total_tasks = task_breakdown['audio'] + task_breakdown['image'] + task_breakdown['other']
+                        if total_tasks > 0:
+                            audio_ratio = task_breakdown['audio'] / total_tasks
+                            image_ratio = task_breakdown['image'] / total_tasks
+                            other_ratio = task_breakdown['other'] / total_tasks
+                            
+                            # Estimate average time per task
+                            avg_task_time = (
+                                audio_ratio * (avg_audio_time if avg_audio_time > 0 else 5) +
+                                image_ratio * (avg_image_time if avg_image_time > 0 else 10) +
+                                other_ratio * 3  # Default 3s for other tasks
+                            )
+                        else:
+                            avg_task_time = 5  # Default fallback
+                    else:
+                        # No breakdown available, use simple average
+                        if avg_audio_time > 0 and avg_image_time > 0:
+                            avg_task_time = (avg_audio_time + avg_image_time) / 2
+                        elif avg_audio_time > 0:
+                            avg_task_time = avg_audio_time
+                        elif avg_image_time > 0:
+                            avg_task_time = avg_image_time
+                        else:
+                            avg_task_time = 5  # Default fallback
+                    
+                    # Calculate estimated time for pending tasks
+                    # Adjust for concurrent workers
+                    worker_count = len(workers) if workers else 1
+                    max_concurrency = sum(w.get('max_concurrency', 1) for w in workers) if workers else 1
+                    
+                    # Time = (pending tasks / worker concurrency) * avg time per task
+                    estimated_time_remaining = (pending_count / max_concurrency) * avg_task_time
+                
+            except Exception as timing_error:
+                print(f"[api_celery_status] Error calculating timing: {timing_error}")
+            finally:
+                if redis_client:
+                    redis_client.close()
+        
         return jsonify({
             "success": True,
             "workers": workers,
@@ -1143,6 +1223,12 @@ def api_celery_status():
             "reserved_tasks": formatted_reserved,
             "registered_tasks": formatted_registered,
             "timestamp": __import__("time").time(),
+            "timing": {
+                "avg_audio_time": round(avg_audio_time, 2),
+                "avg_image_time": round(avg_image_time, 2),
+                "estimated_time_remaining": round(estimated_time_remaining, 1),
+                "task_breakdown": task_breakdown
+            }
         })
     
     except Exception as e:
