@@ -436,7 +436,7 @@ case "${ARGS[0]:-}" in
             echo -n "  Restarting celery deployment... "
         fi
         
-        if kubectl rollout restart deployment -n honeyspeak -l app=celery > /dev/null 2>&1; then
+        if kubectl rollout restart deployment -n honeyspeak celery > /dev/null 2>&1; then
             if [ "$QUIET_MODE" = false ]; then
                 echo -e "${GREEN}✓${NC}"
                 print_success "Celery deployment restarted"
@@ -452,7 +452,7 @@ case "${ARGS[0]:-}" in
             echo -n "  Restarting flask deployment... "
         fi
         
-        if kubectl rollout restart deployment -n honeyspeak -l app=flask > /dev/null 2>&1; then
+        if kubectl rollout restart deployment -n honeyspeak flask > /dev/null 2>&1; then
             if [ "$QUIET_MODE" = false ]; then
                 echo -e "${GREEN}✓${NC}"
                 print_success "Flask deployment restarted"
