@@ -37,12 +37,14 @@ def encode_audio_file(
     base_name = os.path.splitext(input_file)[0]
     low_path = os.path.join(output_dir, f"low_{base_name}.aac")
     
+    logger.info(f"[encode_audio] Input: {raw_path}, Output: {low_path}")
+    
     if not os.path.exists(raw_path):
-        logger.warning(f"Input file not found: {raw_path}")
+        logger.warning(f"[encode_audio] Input file not found: {raw_path}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
     if os.path.exists(low_path):
-        logger.info(f"Output file already exists: {low_path}")
+        logger.info(f"[encode_audio] Output file already exists: {low_path}")
         return {"status": "skipped", "input_file": input_file, "output_file": low_path}
     
     try:
@@ -60,7 +62,7 @@ def encode_audio_file(
             check=True,
             capture_output=True
         )
-        logger.info(f"Encoded audio: {raw_path} -> {low_path}")
+        logger.info(f"[encode_audio] ✓ Encoded audio: {raw_path} -> {low_path}")
         return {"status": "success", "input_file": input_file, "output_file": low_path}
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg error encoding {raw_path}: {e.stderr}")
@@ -87,12 +89,14 @@ def encode_image_file(
     base_name = os.path.splitext(input_file)[0]
     low_path = os.path.join(output_dir, f"low_{base_name}.heif")
     
+    logger.info(f"[encode_image] Input: {raw_path}, Output: {low_path}")
+    
     if not os.path.exists(raw_path):
-        logger.warning(f"Input file not found: {raw_path}")
+        logger.warning(f"[encode_image] Input file not found: {raw_path}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
     if os.path.exists(low_path):
-        logger.info(f"Output file already exists: {low_path}")
+        logger.info(f"[encode_image] Output file already exists: {low_path}")
         return {"status": "skipped", "input_file": input_file, "output_file": low_path}
     
     try:
@@ -100,14 +104,14 @@ def encode_image_file(
             [
                 "magick",
                 raw_path,
-                "-resize", "50%",
+                "-resize", "512x768\!",
                 "-quality", str(quality),
                 low_path,
             ],
             check=True,
             capture_output=True
         )
-        logger.info(f"Encoded image: {raw_path} -> {low_path}")
+        logger.info(f"[encode_image] ✓ Encoded image: {raw_path} -> {low_path}")
         return {"status": "success", "input_file": input_file, "output_file": low_path}
     except subprocess.CalledProcessError as e:
         logger.error(f"ImageMagick error encoding {raw_path}: {e.stderr}")
@@ -130,8 +134,12 @@ def add_file_to_package(
     Returns:
         Package ID (e.g., 'a0') or None if failed
     """
+    logger.info(f"[add_file_to_package] Attempting to add: {filename}")
+    logger.info(f"[add_file_to_package] File exists: {os.path.exists(filename)}")
+    logger.info(f"[add_file_to_package] Package dir: {package_dir}")
+    
     if not os.path.exists(filename):
-        logger.warning(f"File not found: {filename}")
+        logger.warning(f"[add_file_to_package] File not found: {filename}")
         return None
     
     # Extract first letter for package naming
@@ -142,26 +150,32 @@ def add_file_to_package(
     else:
         first_letter = os.path.basename(filename)[0]
     
+    logger.info(f"[add_file_to_package] Extracted letter: {first_letter}")
+    
     # Find or create appropriate package
     package_id = 0
     os.makedirs(package_dir, exist_ok=True)
     
     while True:
         package_file = os.path.join(package_dir, f"package_{first_letter}{package_id}.zip")
+        logger.info(f"[add_file_to_package] Trying package: {package_file}")
         
-        if os.path.exists(package_file) and os.path.getsize(package_file) > max_size:
-            package_id += 1
-            continue
+        if os.path.exists(package_file):
+            size = os.path.getsize(package_file)
+            logger.info(f"[add_file_to_package] Package exists, size: {size} bytes (max: {max_size})")
+            if size > max_size:
+                package_id += 1
+                continue
         
         try:
             with ZipFile(package_file, "a") as package:
                 arcname = os.path.basename(filename)
                 if arcname in package.namelist():
-                    logger.info(f"{arcname} already exists in {package_file}")
+                    logger.info(f"[add_file_to_package] {arcname} already exists in {package_file}")
                     return f"{first_letter}{package_id}"
                 
                 package.write(filename, arcname=arcname)
-                logger.info(f"Stored {arcname} into package_{first_letter}{package_id}.zip")
+                logger.info(f"[add_file_to_package] ✓ Stored {arcname} into package_{first_letter}{package_id}.zip")
                 return f"{first_letter}{package_id}"
         except Exception as e:
             logger.error(f"Error adding {filename} to package: {e}")

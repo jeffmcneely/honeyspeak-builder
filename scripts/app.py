@@ -663,7 +663,7 @@ def build_package():
         return redirect(url_for("task_status", task_id=task.id))
     
     backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
-    return render_template("build_package.html", outdir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
+    return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
 
 @app.route("/download")
 def download():

@@ -524,6 +524,9 @@ def package_all_assets(
     Returns:
         Dict with packaging results
     """
+    import tempfile
+    import shutil
+    
     logger.info("Starting asset packaging")
     
     # Determine packaging SQLite DB path. If a PostgreSQL connection is
@@ -531,27 +534,54 @@ def package_all_assets(
     # always written into a SQLite database.
     postgres_conn = os.getenv("POSTGRES_CONNECTION")
     packaging_db_path = None
+    temp_db_path = None
+    final_db_destination = None
 
     if postgres_conn:
-        # Prefer an explicit sqlite path if provided, otherwise use local 'Dictionary.sqlite'
-        if db_path and str(db_path).lower().endswith('.sqlite'):
-            packaging_db_path = db_path
-        else:
-            packaging_db_path = os.path.join(os.getcwd(), "Dictionary.sqlite")
-
+        # Create temp directory for SQLite file
+        temp_dir = tempfile.mkdtemp(prefix="honeyspeak_pkg_")
+        temp_db_path = os.path.join(temp_dir, "Dictionary.sqlite")
+        packaging_db_path = temp_db_path
+        
+        # Final destination will be in asset_dir
+        final_db_destination = os.path.join(asset_dir, "Dictionary.sqlite")
+        
+        logger.info(f"[PACKAGE] Created temp directory: {temp_dir}")
+        logger.info(f"[PACKAGE] Temp DB path: {temp_db_path}")
+        logger.info(f"[PACKAGE] Final destination: {final_db_destination}")
         logger.info(f"Postgres detected - converting to SQLite for packaging: {packaging_db_path}")
+        
         from scripts.convert_postgres_to_sqlite import convert_database
-
         ok = convert_database(postgres_conn, packaging_db_path)
+        
         if not ok:
             logger.error("Postgres -> SQLite conversion failed, aborting packaging")
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
             return {"status": "error", "message": "Postgres->SQLite conversion failed"}
     else:
         # No Postgres - ensure we have a sqlite path to operate on
         if db_path and str(db_path).lower().endswith('.sqlite'):
-            packaging_db_path = db_path
+            # If db_path looks like it's in /data, create temp copy
+            if db_path.startswith('/data'):
+                temp_dir = tempfile.mkdtemp(prefix="honeyspeak_pkg_")
+                temp_db_path = os.path.join(temp_dir, "Dictionary.sqlite")
+                
+                logger.info(f"[PACKAGE] DB path is in /data, creating temp copy")
+                logger.info(f"[PACKAGE] Copying {db_path} -> {temp_db_path}")
+                
+                shutil.copy(db_path, temp_db_path)
+                packaging_db_path = temp_db_path
+                final_db_destination = os.path.join(asset_dir, "Dictionary.sqlite")
+                
+                logger.info(f"[PACKAGE] Temp DB created: {temp_db_path}")
+                logger.info(f"[PACKAGE] Final destination: {final_db_destination}")
+            else:
+                packaging_db_path = db_path
         else:
             packaging_db_path = os.environ.get("DATABASE_PATH", "Dictionary.sqlite")
+
+    logger.info(f"[PACKAGE] Using packaging DB: {packaging_db_path}")
 
     # Clean existing packages and metadata in the packaging DB
     clean_packages(package_dir)
@@ -616,11 +646,41 @@ def package_all_assets(
     success_count = sum(1 for r in results if r.get("status") == "success")
     logger.info(f"Packaging complete: {success_count}/{len(results)} successful")
     
+    # Move temp DB to final destination if needed
+    if temp_db_path and final_db_destination:
+        try:
+            logger.info(f"[PACKAGE] Moving temp DB to final destination")
+            logger.info(f"[PACKAGE] Source: {temp_db_path}")
+            logger.info(f"[PACKAGE] Destination: {final_db_destination}")
+            
+            # Ensure destination directory exists
+            os.makedirs(os.path.dirname(final_db_destination), exist_ok=True)
+            
+            # Move the database file
+            shutil.copy(temp_db_path, final_db_destination)
+            logger.info(f"[PACKAGE] ✓ Database moved to {final_db_destination}")
+            
+            # Clean up temp directory
+            temp_dir = os.path.dirname(temp_db_path)
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info(f"[PACKAGE] ✓ Cleaned up temp directory: {temp_dir}")
+            
+        except Exception as e:
+            logger.error(f"[PACKAGE] Error moving database: {e}")
+            return {
+                "status": "error",
+                "message": f"Packaging succeeded but failed to move database: {e}",
+                "words_processed": len(words),
+                "assets_processed": len(results),
+                "assets_success": success_count
+            }
+    
     return {
         "status": "success",
         "words_processed": len(words),
         "assets_processed": len(results),
-        "assets_success": success_count
+        "assets_success": success_count,
+        "database_path": final_db_destination if final_db_destination else packaging_db_path
     }
 
 
