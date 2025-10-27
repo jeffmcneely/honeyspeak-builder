@@ -20,16 +20,20 @@ CREATE TABLE IF NOT EXISTS words (
   word TEXT NOT NULL,
   functional_label TEXT,
   uuid TEXT PRIMARY KEY,
-  flags INTEGER DEFAULT 0
+  flags INTEGER DEFAULT 0,
+  level TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_words_word ON words(word);
+CREATE INDEX IF NOT EXISTS idx_words_level ON words(level);
+CREATE INDEX IF NOT EXISTS idx_words_level_word ON words(level, word);
 ```
 
 - word: TEXT — headword (required)
 - functional_label: TEXT — part of speech / label (e.g., "noun")
 - uuid: TEXT — primary key per word sense
 - flags: INTEGER — bitfield (see below)
+- level: TEXT — CEFR level (e.g., "A1", "A2", "B1", "B2", "C1", "C2")
 
 #### Flags bitfield
 
@@ -61,6 +65,7 @@ class Word:
   functional_label: Optional[str]
   uuid: str
   flags: int = 0
+  level: Optional[str] = None
 
   @property
   def flagset(self) -> Flags:

@@ -77,12 +77,12 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         for i in range(0, len(words), batch_size):
             batch = words[i:i+batch_size]
             word_data = [
-                (w.word, w.functional_label, w.uuid, w.flags)
+                (w.word, w.functional_label, w.uuid, w.flags, w.level)
                 for w in batch
             ]
             
             cursor.executemany(
-                "INSERT INTO words (word, functional_label, uuid, flags) VALUES (?, ?, ?, ?)",
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
                 word_data
             )
             word_count += len(batch)
