@@ -636,8 +636,33 @@ def package_all_assets(
     """
     import tempfile
     import shutil
+    import glob
     
     logger.info("Starting asset packaging")
+    
+    # Clean package directory - remove all existing package files
+    logger.info(f"Cleaning package directory: {package_dir}")
+    if os.path.exists(package_dir):
+        for file in os.listdir(package_dir):
+            file_path = os.path.join(package_dir, file)
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    logger.debug(f"Removed package file: {file}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove {file}: {e}")
+    
+    # Delete all "low_*" files from asset directory
+    logger.info(f"Cleaning low-quality assets from: {asset_dir}")
+    if os.path.exists(asset_dir):
+        low_files = glob.glob(os.path.join(asset_dir, "low_*"))
+        for file_path in low_files:
+            try:
+                os.remove(file_path)
+                logger.debug(f"Removed: {os.path.basename(file_path)}")
+            except Exception as e:
+                logger.warning(f"Failed to remove {file_path}: {e}")
+        logger.info(f"Removed {len(low_files)} low-quality asset files")
     
     # Determine packaging SQLite DB path. If a PostgreSQL connection is
     # configured, convert Postgres -> SQLite for packaging so assets are
