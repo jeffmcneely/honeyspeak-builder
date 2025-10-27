@@ -526,17 +526,25 @@ def encode_and_package_audio(
     db_path: str,
     uuid: str,
     assetgroup: str,
-    sid: int,
+    defn_id: int,
+    variant: int,
     bitrate: int = 32
 ) -> Dict:
     """
     Encode an audio file and add it to a package.
     Does NOT store metadata - caller is responsible for batching metadata storage.
     
+    Args:
+        defn_id: Definition ID (0 for word audio)
+        variant: Variant number (0 or 1)
+    
     Returns:
         Dict with encoding and packaging results
     """
-    logger.info(f"Encoding and packaging audio: {input_file}")
+    # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
+    sid = defn_id * 100 + variant
+    
+    logger.info(f"Encoding and packaging audio: {input_file} (sid={sid})")
     
     # Encode
     encode_result = encode_audio_file(input_file, output_dir, bitrate)
@@ -570,17 +578,25 @@ def encode_and_package_image(
     db_path: str,
     uuid: str,
     assetgroup: str,
-    sid: int,
+    defn_id: int,
+    variant: int,
     quality: int = 25
 ) -> Dict:
     """
     Encode an image file and add it to a package.
     Does NOT store metadata - caller is responsible for batching metadata storage.
     
+    Args:
+        defn_id: Definition ID (0 for word images)
+        variant: Variant number (0 or 1)
+    
     Returns:
         Dict with encoding and packaging results
     """
-    logger.info(f"Encoding and packaging image: {input_file}")
+    # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
+    sid = defn_id * 100 + variant
+    
+    logger.info(f"Encoding and packaging image: {input_file} (sid={sid})")
     
     # Encode
     encode_result = encode_image_file(input_file, output_dir, quality)
@@ -706,12 +722,13 @@ def package_all_assets(
         word_audio_file = f"word_{word.uuid}_0.aac"
         audio_result = encode_and_package_audio(
             word_audio_file, asset_dir, package_dir, packaging_db_path,
-            word.uuid, "word", 0
+            word.uuid, "word", 0, 0  # defn_id=0, variant=0 for word audio
         )
         results.append(audio_result)
         
         # Collect metadata for batching instead of storing immediately
         if audio_result.get("status") == "success":
+            # sid for word audio is always 0 (defn_id=0, variant=0 -> 0*100+0 = 0)
             asset_metadata_batch.append({
                 'uuid': word.uuid,
                 'assetgroup': 'word',
@@ -725,19 +742,18 @@ def package_all_assets(
             # Package 2 variants of definition audio (i=0, i=1)
             for variant_i in range(2):
                 def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{variant_i}.aac"
-                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                audio_sid = defn.id * 100 + variant_i
                 audio_result = encode_and_package_audio(
                     def_audio_file, asset_dir, package_dir, packaging_db_path,
-                    word.uuid, "shortdef", audio_sid
+                    word.uuid, "shortdef", defn.id, variant_i
                 )
                 results.append(audio_result)
                 
                 if audio_result.get("status") == "success":
+                    # sid = defn.id * 100 + variant_i (computed inside the task)
                     asset_metadata_batch.append({
                         'uuid': word.uuid,
                         'assetgroup': 'shortdef',
-                        'sid': audio_sid,
+                        'sid': defn.id,
                         'package_id': audio_result['package_id'],
                         'filename': audio_result['filename']
                     })
@@ -745,11 +761,9 @@ def package_all_assets(
             # Package 2 variants of definition image (i=0, i=1)
             for variant_i in range(2):
                 def_image_file = f"image_{word.uuid}_{defn.id}_{variant_i}.png"
-                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                image_sid = defn.id * 100 + variant_i
                 image_result = encode_and_package_image(
                     def_image_file, asset_dir, package_dir, packaging_db_path,
-                    word.uuid, "image", image_sid
+                    word.uuid, "image", defn.id, variant_i
                 )
                 results.append(image_result)
                 
@@ -757,7 +771,8 @@ def package_all_assets(
                     asset_metadata_batch.append({
                         'uuid': word.uuid,
                         'assetgroup': 'image',
-                        'sid': image_sid,
+                        'sid': defn.id,
+                        'variant': variant_i,
                         'package_id': image_result['package_id'],
                         'filename': image_result['filename']
                     })
