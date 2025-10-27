@@ -9,7 +9,7 @@ import logging
 import re
 from pathlib import Path
 from zipfile import ZipFile
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from .sqlite_dictionary import SQLiteDictionary
 
 logger = logging.getLogger(__name__)
@@ -220,6 +220,60 @@ def store_asset_metadata(
     except Exception as e:
         logger.error(f"Error storing asset metadata: {e}")
         return {"status": "error", "error": str(e)}
+
+
+def store_asset_metadata_batch(
+    db_path: str,
+    assets: List[Dict]
+) -> Dict[str, str]:
+    """
+    Store multiple asset metadata entries in a batched transaction.
+    
+    Args:
+        db_path: Path to SQLite database
+        assets: List of dicts with keys: uuid, assetgroup, sid, package_id, filename
+        
+    Returns:
+        Dict with 'status' and 'count' keys
+    """
+    try:
+        # If db_path points to a SQLite file, always use SQLiteDictionary
+        if db_path and str(db_path).lower().endswith('.sqlite'):
+            from libs.sqlite_dictionary import SQLiteDictionary
+            db = SQLiteDictionary(db_path)
+        else:
+            from libs.dictionary import Dictionary
+            db = Dictionary(db_path)
+        
+        # Begin transaction
+        db.begin_immediate()
+        
+        count = 0
+        for asset in assets:
+            db.add_asset(
+                asset['uuid'],
+                asset['assetgroup'],
+                asset['sid'],
+                asset['variant'], 
+                asset['package_id'],
+                asset['filename']
+            )
+            count += 1
+        
+        # Commit transaction
+        db.commit()
+        db.close()
+        
+        logger.info(f"Stored {count} asset metadata entries in batch")
+        return {"status": "success", "count": count}
+    except Exception as e:
+        logger.error(f"Error storing asset metadata batch: {e}")
+        try:
+            db.rollback()
+            db.close()
+        except:
+            pass
+        return {"status": "error", "error": str(e), "count": 0}
 
 
 def clean_packages(package_dir: str) -> Dict[str, any]:

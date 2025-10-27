@@ -531,6 +531,7 @@ def encode_and_package_audio(
 ) -> Dict:
     """
     Encode an audio file and add it to a package.
+    Does NOT store metadata - caller is responsible for batching metadata storage.
     
     Returns:
         Dict with encoding and packaging results
@@ -547,10 +548,8 @@ def encode_and_package_audio(
     if not package_id:
         return {"status": "error", "error": "Failed to add to package"}
     
-    # Store metadata
+    # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
-    
     logger.info(f"Audio packaged: {filename} -> {package_id}")
     
     return {
@@ -576,6 +575,7 @@ def encode_and_package_image(
 ) -> Dict:
     """
     Encode an image file and add it to a package.
+    Does NOT store metadata - caller is responsible for batching metadata storage.
     
     Returns:
         Dict with encoding and packaging results
@@ -592,10 +592,8 @@ def encode_and_package_image(
     if not package_id:
         return {"status": "error", "error": "Failed to add to package"}
     
-    # Store metadata
+    # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
-    
     logger.info(f"Image packaged: {filename} -> {package_id}")
     
     return {
@@ -639,8 +637,8 @@ def package_all_assets(
         temp_db_path = os.path.join(temp_dir, "Dictionary.sqlite")
         packaging_db_path = temp_db_path
         
-        # Final destination will be in asset_dir
-        final_db_destination = os.path.join(asset_dir, "Dictionary.sqlite")
+        # Final destination will be in /data/honeyspeak/assets
+        final_db_destination = "/data/honeyspeak/assets/Dictionary.sqlite"
         
         logger.info(f"[PACKAGE] Created temp directory: {temp_dir}")
         logger.info(f"[PACKAGE] Temp DB path: {temp_db_path}")
@@ -668,7 +666,7 @@ def package_all_assets(
                 
                 shutil.copy(db_path, temp_db_path)
                 packaging_db_path = temp_db_path
-                final_db_destination = os.path.join(asset_dir, "Dictionary.sqlite")
+                final_db_destination = "/data/honeyspeak/assets/Dictionary.sqlite"
                 
                 logger.info(f"[PACKAGE] Temp DB created: {temp_db_path}")
                 logger.info(f"[PACKAGE] Final destination: {final_db_destination}")
@@ -693,6 +691,9 @@ def package_all_assets(
     logger.info(f"Packaging assets for {len(words)} words")
     
     results = []
+    asset_metadata_batch = []
+    BATCH_SIZE = 1000
+    
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
 
@@ -709,29 +710,64 @@ def package_all_assets(
         )
         results.append(audio_result)
         
+        # Collect metadata for batching instead of storing immediately
+        if audio_result.get("status") == "success":
+            asset_metadata_batch.append({
+                'uuid': word.uuid,
+                'assetgroup': 'word',
+                'sid': 0,
+                'package_id': audio_result['package_id'],
+                'filename': audio_result['filename']
+            })
+        
         # Package definition assets
         for defn in definitions:
             # Package 2 variants of definition audio (i=0, i=1)
-            for i in range(2):
-                def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{i}.aac"
+            for variant_i in range(2):
+                def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{variant_i}.aac"
                 # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                audio_sid = defn.id * 100 + i
+                audio_sid = defn.id * 100 + variant_i
                 audio_result = encode_and_package_audio(
                     def_audio_file, asset_dir, package_dir, packaging_db_path,
                     word.uuid, "shortdef", audio_sid
                 )
                 results.append(audio_result)
+                
+                if audio_result.get("status") == "success":
+                    asset_metadata_batch.append({
+                        'uuid': word.uuid,
+                        'assetgroup': 'shortdef',
+                        'sid': audio_sid,
+                        'package_id': audio_result['package_id'],
+                        'filename': audio_result['filename']
+                    })
             
             # Package 2 variants of definition image (i=0, i=1)
-            for i in range(2):
-                def_image_file = f"image_{word.uuid}_{defn.id}_{i}.png"
+            for variant_i in range(2):
+                def_image_file = f"image_{word.uuid}_{defn.id}_{variant_i}.png"
                 # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                image_sid = defn.id * 100 + i
+                image_sid = defn.id * 100 + variant_i
                 image_result = encode_and_package_image(
                     def_image_file, asset_dir, package_dir, packaging_db_path,
                     word.uuid, "image", image_sid
                 )
                 results.append(image_result)
+                
+                if image_result.get("status") == "success":
+                    asset_metadata_batch.append({
+                        'uuid': word.uuid,
+                        'assetgroup': 'image',
+                        'sid': image_sid,
+                        'package_id': image_result['package_id'],
+                        'filename': image_result['filename']
+                    })
+        
+        # Flush batch when it reaches BATCH_SIZE
+        if len(asset_metadata_batch) >= BATCH_SIZE:
+            from libs.package_ops import store_asset_metadata_batch
+            batch_result = store_asset_metadata_batch(packaging_db_path, asset_metadata_batch)
+            logger.info(f"Flushed {batch_result.get('count', 0)} asset metadata entries")
+            asset_metadata_batch = []
         
         # Update task progress
         self.update_state(
@@ -739,8 +775,25 @@ def package_all_assets(
             meta={'current': i+1, 'total': len(words), 'word': word.word}
         )
     
+    # Flush any remaining metadata
+    if asset_metadata_batch:
+        from libs.package_ops import store_asset_metadata_batch
+        batch_result = store_asset_metadata_batch(packaging_db_path, asset_metadata_batch)
+        logger.info(f"Flushed final {batch_result.get('count', 0)} asset metadata entries")
+    
     success_count = sum(1 for r in results if r.get("status") == "success")
     logger.info(f"Packaging complete: {success_count}/{len(results)} successful")
+    
+    # Execute PRAGMA journal_mode=DELETE to clean up WAL/SHM files
+    try:
+        logger.info("[PACKAGE] Converting database to DELETE journal mode (cleaning up WAL/SHM)...")
+        from libs.sqlite_dictionary import SQLiteDictionary
+        db = SQLiteDictionary(packaging_db_path)
+        db.connection.execute("PRAGMA journal_mode=DELETE")
+        db.close()
+        logger.info("[PACKAGE] ✓ Converted to DELETE journal mode")
+    except Exception as e:
+        logger.error(f"[PACKAGE] Error converting to DELETE mode: {e}")
     
     # Move temp DB to final destination if needed
     if temp_db_path and final_db_destination:

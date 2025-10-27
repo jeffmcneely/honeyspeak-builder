@@ -29,10 +29,11 @@ SQLITE_SCHEMA = [
         uuid TEXT,
         assetgroup TEXT,
         sid INTEGER,
+        variant INTEGER,
         package TEXT NOT NULL CHECK(length(package) = 2),
         filename TEXT,
         FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-        UNIQUE(uuid, assetgroup, sid)
+        UNIQUE(uuid, assetgroup, sid, variant)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
@@ -638,14 +639,15 @@ class SQLiteDictionary:
         uuid_: str,
         assetgroup: Literal["word", "image", "shortdef"],
         sid: int,
+        variant: int,
         package: str,
         filename: str,
     ) -> bool:
         try:
             cursor = self.connection.cursor()
             cursor.execute(
-                "INSERT INTO external_assets (uuid, assetgroup, sid, package, filename) VALUES (?, ?, ?, ?, ?)",
-                (uuid_, assetgroup, sid, package, str(filename)),
+                "INSERT INTO external_assets (uuid, assetgroup, sid, variant, package, filename) VALUES (?, ?, ?, ?, ?, ?)",
+                (uuid_, assetgroup, sid, variant, package, str(filename)),
             )
             self.connection.commit()
             return True
