@@ -55,8 +55,12 @@ try:
     from moderator import moderator_bp  # type: ignore
     app.register_blueprint(moderator_bp, url_prefix="/moderator")
     print("[APP DEBUG] Moderator blueprint registered at /moderator")
+    # Set the asset directory config for moderator
+    app.config["ASSET_DIRECTORY"] = ASSET_DIR
 except Exception as e:
     print(f"[APP DEBUG] Could not register moderator blueprint: {e}")
+    import traceback
+    traceback.print_exc()
 
 # Jinja2 custom filters
 @app.template_filter('filesizeformat')
@@ -79,6 +83,7 @@ def list_package_files():
     pkg_dir = BASE_DIR / PACKAGE_DIR
     if not pkg_dir.exists():
         return []
+    return [f.name for f in pkg_dir.iterdir() if f.is_file()]
     
 
 # === Build Tests Page and AJAX Endpoints ===
@@ -515,6 +520,7 @@ def database_status():
 def build_dictionary():
     if request.method == "POST":
         wordlist = request.files.get("wordlist")
+        level = request.form.get("level", "none")
         
         if not wordlist:
             flash("No wordlist uploaded", "error")
@@ -541,8 +547,9 @@ def build_dictionary():
         db_path = None  # Let Dictionary class decide based on environment
         
         # Enqueue task using send_task with full task name
-        task = celery.send_task("scripts.celery_tasks.process_wordlist", args=[words, db_path, api_key])
-        flash(f"Dictionary build started with {len(words)} words (task id: {task.id})", "info")
+        task = celery.send_task("scripts.celery_tasks.process_wordlist", args=[words, db_path, api_key, level])
+        level_msg = f" (level: {level.upper()})" if level != "none" else ""
+        flash(f"Dictionary build started with {len(words)} words{level_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
     backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
@@ -589,7 +596,7 @@ def build_assets():
         generate_images = request.form.get("generate_images") == "1"
         audio_model = request.form.get("audio_model", "gpt-4o-mini-tts")
         audio_voice = request.form.get("audio_voice", "alloy")
-        image_model = request.form.get("image_model", "gpt-image-1")
+        image_model = request.form.get("image_model", "sdxl_turbo")
         image_size = request.form.get("image_size", "vertical")
         output_dir = request.form.get("outdir", ASSET_DIR)
         
@@ -660,7 +667,7 @@ def build_package():
         return redirect(url_for("task_status", task_id=task.id))
     
     backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
-    return render_template("build_package.html", outdir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
+    return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
 
 @app.route("/download")
 def download():
@@ -1057,18 +1064,57 @@ def api_celery_status():
         scheduled_count = sum(len(tasks) for tasks in scheduled_tasks.values())
         reserved_count = sum(len(tasks) for tasks in reserved_tasks.values())
         
+        # Get actual pending tasks count from Redis broker
+        # Reserved tasks are limited by prefetch, so we need to check the broker queue
+        pending_count = 0
+        redis_client = None
+        try:
+            import redis
+            # Get Redis connection from Celery broker URL
+            broker_url = celery.conf.broker_url
+            if broker_url and 'redis' in broker_url:
+                # Parse Redis URL
+                redis_client = redis.from_url(broker_url)
+                # Default Celery queue name is 'celery'
+                queue_name = 'celery'
+                # Get length of the queue in Redis
+                pending_count = redis_client.llen(queue_name)
+        except Exception as redis_error:
+            # If Redis inspection fails, fall back to reserved count
+            print(f"[api_celery_status] Redis queue inspection failed: {redis_error}")
+            pending_count = reserved_count
+        
         # Format active tasks for display
         formatted_active = []
         for worker, tasks in active_tasks.items():
             for task in tasks:
-                formatted_active.append({
+                task_id = task.get("id", "unknown")
+                task_info = {
                     "worker": worker,
                     "name": task.get("name", "unknown"),
-                    "id": task.get("id", "unknown"),
+                    "id": task_id,
                     "args": str(task.get("args", [])),
                     "kwargs": str(task.get("kwargs", {})),
                     "time_start": task.get("time_start", 0),
-                })
+                    "progress": None
+                }
+                
+                # Try to get progress info for this task
+                try:
+                    if task_id != "unknown":
+                        res = celery.AsyncResult(task_id)
+                        if res.state == 'PROGRESS' and res.info:
+                            task_info["progress"] = {
+                                "current": res.info.get("current", 0),
+                                "total": res.info.get("total", 0),
+                                "percent": int((res.info.get("current", 0) / res.info.get("total", 1)) * 100) if res.info.get("total", 0) > 0 else 0,
+                                "word": res.info.get("word", "")
+                            }
+                except Exception as progress_error:
+                    # If we can't get progress, just continue without it
+                    pass
+                
+                formatted_active.append(task_info)
         
         # Format scheduled tasks
         formatted_scheduled = []
@@ -1081,6 +1127,18 @@ def api_celery_status():
                     "eta": task.get("eta", "unknown"),
                 })
         
+        # Format reserved/pending tasks
+        formatted_reserved = []
+        for worker, tasks in reserved_tasks.items():
+            for task in tasks:
+                formatted_reserved.append({
+                    "worker": worker,
+                    "name": task.get("name", "unknown"),
+                    "id": task.get("id", "unknown"),
+                    "args": str(task.get("args", [])),
+                    "kwargs": str(task.get("kwargs", {})),
+                })
+        
         # Get worker info
         workers = []
         for worker, worker_stats in stats.items():
@@ -1091,15 +1149,105 @@ def api_celery_status():
                 "max_concurrency": worker_stats.get("pool", {}).get("max-concurrency", 0),
             })
         
+        # Format registered tasks
+        formatted_registered = {}
+        for worker, tasks in registered_tasks.items():
+            formatted_registered[worker] = sorted(tasks) if tasks else []
+        
+        # Calculate average task times and estimate time remaining
+        avg_audio_time = 0
+        avg_image_time = 0
+        estimated_time_remaining = 0
+        task_breakdown = {"audio": 0, "image": 0, "other": 0}
+        
+        if redis_client:
+            try:
+                # Get average times from stored timings
+                audio_times = redis_client.lrange('task_times:generate_definition_audio', 0, -1)
+                if audio_times:
+                    avg_audio_time = sum(float(t) for t in audio_times) / len(audio_times)
+                
+                image_times = redis_client.lrange('task_times:generate_definition_image', 0, -1)
+                if image_times:
+                    avg_image_time = sum(float(t) for t in image_times) / len(image_times)
+                
+                # Count task types in pending + reserved
+                all_waiting_tasks = []
+                for tasks in reserved_tasks.values():
+                    all_waiting_tasks.extend(tasks)
+                
+                # Also peek at pending tasks in the queue (if possible)
+                # For simplicity, we'll use task names from active/reserved to estimate distribution
+                for task in all_waiting_tasks:
+                    task_name = task.get('name', '')
+                    if 'audio' in task_name.lower():
+                        task_breakdown['audio'] += 1
+                    elif 'image' in task_name.lower():
+                        task_breakdown['image'] += 1
+                    else:
+                        task_breakdown['other'] += 1
+                
+                # Estimate remaining time based on pending count and task distribution
+                if pending_count > 0:
+                    # If we have task breakdown, use weighted average
+                    if task_breakdown['audio'] + task_breakdown['image'] > 0:
+                        total_tasks = task_breakdown['audio'] + task_breakdown['image'] + task_breakdown['other']
+                        if total_tasks > 0:
+                            audio_ratio = task_breakdown['audio'] / total_tasks
+                            image_ratio = task_breakdown['image'] / total_tasks
+                            other_ratio = task_breakdown['other'] / total_tasks
+                            
+                            # Estimate average time per task
+                            avg_task_time = (
+                                audio_ratio * (avg_audio_time if avg_audio_time > 0 else 5) +
+                                image_ratio * (avg_image_time if avg_image_time > 0 else 10) +
+                                other_ratio * 3  # Default 3s for other tasks
+                            )
+                        else:
+                            avg_task_time = 5  # Default fallback
+                    else:
+                        # No breakdown available, use simple average
+                        if avg_audio_time > 0 and avg_image_time > 0:
+                            avg_task_time = (avg_audio_time + avg_image_time) / 2
+                        elif avg_audio_time > 0:
+                            avg_task_time = avg_audio_time
+                        elif avg_image_time > 0:
+                            avg_task_time = avg_image_time
+                        else:
+                            avg_task_time = 5  # Default fallback
+                    
+                    # Calculate estimated time for pending tasks
+                    # Adjust for concurrent workers
+                    worker_count = len(workers) if workers else 1
+                    max_concurrency = sum(w.get('max_concurrency', 1) for w in workers) if workers else 1
+                    
+                    # Time = (pending tasks / worker concurrency) * avg time per task
+                    estimated_time_remaining = (pending_count / max_concurrency) * avg_task_time
+                
+            except Exception as timing_error:
+                print(f"[api_celery_status] Error calculating timing: {timing_error}")
+            finally:
+                if redis_client:
+                    redis_client.close()
+        
         return jsonify({
             "success": True,
             "workers": workers,
             "active_count": active_count,
             "scheduled_count": scheduled_count,
             "reserved_count": reserved_count,
+            "pending_count": pending_count,
             "active_tasks": formatted_active,
             "scheduled_tasks": formatted_scheduled,
+            "reserved_tasks": formatted_reserved,
+            "registered_tasks": formatted_registered,
             "timestamp": __import__("time").time(),
+            "timing": {
+                "avg_audio_time": round(avg_audio_time, 2),
+                "avg_image_time": round(avg_image_time, 2),
+                "estimated_time_remaining": round(estimated_time_remaining, 1),
+                "task_breakdown": task_breakdown
+            }
         })
     
     except Exception as e:
@@ -1110,8 +1258,11 @@ def api_celery_status():
             "active_count": 0,
             "scheduled_count": 0,
             "reserved_count": 0,
+            "pending_count": 0,
             "active_tasks": [],
             "scheduled_tasks": [],
+            "reserved_tasks": [],
+            "registered_tasks": {},
         }), 500
 
 

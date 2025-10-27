@@ -82,6 +82,19 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
+        .progress {
+            height: 20px;
+            margin-top: 8px;
+        }
+        .progress-bar {
+            font-size: 0.75rem;
+            line-height: 20px;
+        }
+        .progress-info {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -111,35 +124,73 @@
         </div>
 
         <div class="row mb-4">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="card status-card">
                     <div class="card-body text-center">
                         <div class="metric-value text-primary" id="activeCount">-</div>
-                        <div class="metric-label">Active Tasks</div>
+                        <div class="metric-label">Active</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card status-card warning">
+            <div class="col-md-2">
+                <div class="card status-card danger">
                     <div class="card-body text-center">
-                        <div class="metric-value text-warning" id="scheduledCount">-</div>
-                        <div class="metric-label">Scheduled Tasks</div>
+                        <div class="metric-value text-danger" id="pendingCount">-</div>
+                        <div class="metric-label">Pending</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="card status-card">
                     <div class="card-body text-center">
                         <div class="metric-value text-info" id="reservedCount">-</div>
-                        <div class="metric-label">Reserved Tasks</div>
+                        <div class="metric-label">Reserved</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <div class="card status-card warning">
+                    <div class="card-body text-center">
+                        <div class="metric-value text-warning" id="scheduledCount">-</div>
+                        <div class="metric-label">Scheduled</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
                 <div class="card status-card success">
                     <div class="card-body text-center">
                         <div class="metric-value text-success" id="workerCount">-</div>
                         <div class="metric-label">Workers Online</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="bi bi-hourglass-split"></i> Queue Time Estimate</h5>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div class="metric-value" id="estimatedTimeRemaining" style="font-size: 1.5rem; color: #0d6efd;">-</div>
+                                    <div class="metric-label">Estimated Time Remaining</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div style="font-size: 1.2rem; font-weight: 600; color: #6c757d;" id="avgAudioTime">-</div>
+                                    <div class="metric-label">Avg Audio Task Time</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div style="font-size: 1.2rem; font-weight: 600; color: #6c757d;" id="avgImageTime">-</div>
+                                    <div class="metric-label">Avg Image Task Time</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -189,6 +240,19 @@
                 </div>
             </div>
         </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-check"></i> Registered Tasks</h5>
+            </div>
+            <div class="card-body" id="registeredTasksContainer">
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -198,7 +262,10 @@
 
         function updateCountdown() {
             countdownSeconds--;
-            document.getElementById('countdown').textContent = countdownSeconds;
+            const countdownElement = document.getElementById('countdown');
+            if (countdownElement) {
+                countdownElement.textContent = countdownSeconds;
+            }
             
             if (countdownSeconds <= 0) {
                 countdownSeconds = 30;
@@ -213,7 +280,10 @@
             
             // Reset countdown
             countdownSeconds = 30;
-            document.getElementById('countdown').textContent = countdownSeconds;
+            const countdownElement = document.getElementById('countdown');
+            if (countdownElement) {
+                countdownElement.textContent = countdownSeconds;
+            }
             
             // Start countdown
             countdownInterval = setInterval(updateCountdown, 1000);
@@ -261,9 +331,39 @@
         function updateUI(data) {
             // Update metrics
             document.getElementById('activeCount').textContent = data.active_count;
+            document.getElementById('pendingCount').textContent = data.pending_count;
             document.getElementById('scheduledCount').textContent = data.scheduled_count;
             document.getElementById('reservedCount').textContent = data.reserved_count;
             document.getElementById('workerCount').textContent = data.workers.length;
+            
+            // Update timing estimates
+            if (data.timing) {
+                const timing = data.timing;
+                
+                // Format time remaining
+                const timeRemaining = timing.estimated_time_remaining;
+                let timeText = '-';
+                if (timeRemaining > 0) {
+                    if (timeRemaining < 60) {
+                        timeText = `${Math.round(timeRemaining)}s`;
+                    } else if (timeRemaining < 3600) {
+                        const minutes = Math.floor(timeRemaining / 60);
+                        const seconds = Math.round(timeRemaining % 60);
+                        timeText = `${minutes}m ${seconds}s`;
+                    } else {
+                        const hours = Math.floor(timeRemaining / 3600);
+                        const minutes = Math.floor((timeRemaining % 3600) / 60);
+                        timeText = `${hours}h ${minutes}m`;
+                    }
+                }
+                document.getElementById('estimatedTimeRemaining').textContent = timeText;
+                
+                // Format average times
+                document.getElementById('avgAudioTime').textContent = 
+                    timing.avg_audio_time > 0 ? `${timing.avg_audio_time}s` : '-';
+                document.getElementById('avgImageTime').textContent = 
+                    timing.avg_image_time > 0 ? `${timing.avg_image_time}s` : '-';
+            }
             
             // Update workers
             const workersContainer = document.getElementById('workersContainer');
@@ -290,22 +390,50 @@
             if (data.active_tasks.length === 0) {
                 activeContainer.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-check-circle"></i> No active tasks</p>';
             } else {
-                activeContainer.innerHTML = data.active_tasks.map(task => `
-                    <div class="task-row">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <strong>${task.name}</strong>
-                                <span class="badge bg-primary ms-2">${task.worker}</span>
-                                <div class="task-id mt-1">ID: ${task.id}</div>
-                                ${task.args && task.args !== '[]' ? `<div class="task-args">Args: ${task.args}</div>` : ''}
-                                ${task.kwargs && task.kwargs !== '{}' ? `<div class="task-args">Kwargs: ${task.kwargs}</div>` : ''}
+                activeContainer.innerHTML = data.active_tasks.map(task => {
+                    let progressHtml = '';
+                    if (task.progress) {
+                        const percent = task.progress.percent || 0;
+                        const current = task.progress.current || 0;
+                        const total = task.progress.total || 0;
+                        const word = task.progress.word || '';
+                        
+                        progressHtml = `
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     style="width: ${percent}%"
+                                     aria-valuenow="${percent}" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">
+                                    ${percent}%
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <span class="badge bg-info">Running</span>
+                            <div class="progress-info">
+                                <i class="bi bi-arrow-right-circle"></i> ${current} / ${total}
+                                ${word ? ` - ${word}` : ''}
+                            </div>
+                        `;
+                    }
+                    
+                    return `
+                        <div class="task-row">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <strong>${task.name}</strong>
+                                    <span class="badge bg-primary ms-2">${task.worker}</span>
+                                    <div class="task-id mt-1">ID: ${task.id}</div>
+                                    ${task.args && task.args !== '[]' ? `<div class="task-args">Args: ${task.args}</div>` : ''}
+                                    ${task.kwargs && task.kwargs !== '{}' ? `<div class="task-args">Kwargs: ${task.kwargs}</div>` : ''}
+                                    ${progressHtml}
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-info">Running</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
             
             // Update scheduled tasks
@@ -320,6 +448,28 @@
                             <div class="task-id mt-1">ID: ${task.id}</div>
                         </div>
                         <span class="badge bg-warning text-dark">${task.eta}</span>
+                    </div>
+                `).join('');
+            }
+            
+            // Update registered tasks
+            const registeredContainer = document.getElementById('registeredTasksContainer');
+            if (!data.registered_tasks || Object.keys(data.registered_tasks).length === 0) {
+                registeredContainer.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-exclamation-circle"></i> No registered tasks found</p>';
+            } else {
+                registeredContainer.innerHTML = Object.entries(data.registered_tasks).map(([worker, tasks]) => `
+                    <div class="mb-3">
+                        <h6 class="text-primary mb-2">
+                            <i class="bi bi-person-workspace"></i> ${worker}
+                            <span class="badge bg-secondary ms-2">${tasks.length} tasks</span>
+                        </h6>
+                        <div class="ms-3">
+                            ${tasks.map(task => `
+                                <div class="task-id mb-1">
+                                    <i class="bi bi-dot"></i> ${task}
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 `).join('');
             }

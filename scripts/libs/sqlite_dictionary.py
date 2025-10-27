@@ -11,7 +11,7 @@ SQLITE_SCHEMA = [
         functional_label TEXT,
         uuid TEXT PRIMARY KEY,
         flags INTEGER DEFAULT 0,
-        level INTEGER
+        level TEXT
     )""",
     """CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)""",
     """CREATE INDEX IF NOT EXISTS idx_words_level ON words(level)""",
@@ -29,10 +29,11 @@ SQLITE_SCHEMA = [
         uuid TEXT,
         assetgroup TEXT,
         sid INTEGER,
+        variant INTEGER,
         package TEXT NOT NULL CHECK(length(package) = 2),
         filename TEXT,
         FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-        UNIQUE(uuid, assetgroup, sid)
+        UNIQUE(uuid, assetgroup, sid, variant)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
     """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
@@ -130,7 +131,7 @@ class Word:
     functional_label: Optional[str]
     uuid: str
     flags: int = 0
-    level: Optional[int] = None
+    level: str = None
 
     @property
     def flagset(self) -> Flags:
@@ -319,7 +320,7 @@ class SQLiteDictionary:
         functional_label: str | None = None,
         uuid_: str | None = None,
         flags: int = 0,
-        level: int | None = None,
+        level: str | None = None,
     ) -> str | None:
         try:
             cursor = self.connection.cursor()
@@ -377,8 +378,8 @@ class SQLiteDictionary:
             print(f"[get_all_words] Exception: {e}")
             return []
 
-    def get_words_by_level(self, level: int) -> List[Word]:
-        """Get all words for a specific level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)."""
+    def get_words_by_level(self, level: str) -> List[Word]:
+        """Get all words for a specific level (e.g., 'A1', 'A2', 'B1', 'B2', 'C1', 'C2')."""
         try:
             cursor = self.connection.cursor()
             cursor.execute("SELECT * FROM words WHERE level = ? ORDER BY word", (level,))
@@ -387,7 +388,7 @@ class SQLiteDictionary:
             print(f"[get_words_by_level] Exception: {e}")
             return []
 
-    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[int] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
@@ -397,7 +398,7 @@ class SQLiteDictionary:
         Args:
             limit: Maximum number of rows to return
             starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
-            level: Filter by CEFR level (e.g., 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2)
+            level: Filter by CEFR level (e.g., 'A1', 'A2', 'B1', 'B2', 'C1', 'C2')
         
         Returns:
             List of dicts with keys: uuid, word, functional_label, flags, level, def_id, definition
@@ -503,7 +504,7 @@ class SQLiteDictionary:
         word: str,
         functional_label: str | None = None,
         flags: int | None = None,
-        level: int | None = None,
+        level: str | None = None,
     ) -> int:
         try:
             cursor = self.connection.cursor()
@@ -535,7 +536,7 @@ class SQLiteDictionary:
         uuid_: str,
         functional_label: str | None = None,
         flags: int | None = None,
-        level: int | None = None,
+        level: str | None = None,
     ) -> int:
         """Preferred update using uuid as identifier."""
         try:
@@ -638,14 +639,15 @@ class SQLiteDictionary:
         uuid_: str,
         assetgroup: Literal["word", "image", "shortdef"],
         sid: int,
+        variant: int,
         package: str,
         filename: str,
     ) -> bool:
         try:
             cursor = self.connection.cursor()
             cursor.execute(
-                "INSERT INTO external_assets (uuid, assetgroup, sid, package, filename) VALUES (?, ?, ?, ?, ?)",
-                (uuid_, assetgroup, sid, package, str(filename)),
+                "INSERT INTO external_assets (uuid, assetgroup, sid, variant, package, filename) VALUES (?, ?, ?, ?, ?, ?)",
+                (uuid_, assetgroup, sid, variant, package, str(filename)),
             )
             self.connection.commit()
             return True

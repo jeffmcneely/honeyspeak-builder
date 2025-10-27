@@ -37,6 +37,19 @@
     <div class="card-body">
       <form method="post" enctype="multipart/form-data">
         <div class="mb-3">
+          <label for="level" class="form-label">CEFR Level:</label>
+          <select class="form-control" id="level" name="level">
+            <option value="none" selected>None (default)</option>
+            <option value="a1">A1</option>
+            <option value="a2">A2</option>
+            <option value="b1">B1</option>
+            <option value="b2">B2</option>
+            <option value="c1">C1</option>
+            <option value="c2">C2</option>
+          </select>
+          <small class="form-text text-muted">Optional: Select CEFR level for word classification</small>
+        </div>
+        <div class="mb-3">
           <label for="wordlist" class="form-label">Wordlist File:</label>
           <input type="file" class="form-control" id="wordlist" name="wordlist" accept=".txt" required>
           <small class="form-text text-muted">Upload a text file with one word per line</small>

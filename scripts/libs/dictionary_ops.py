@@ -91,7 +91,7 @@ def parse_flags(entry: dict) -> Flags:
     return Flags.from_int(fl)
 
 
-def process_api_entry(entry: dict, db_path: str) -> Tuple[bool, str]:
+def process_api_entry(entry: dict, function_label: str, level: str, db_path: str) -> Tuple[bool, str]:
     """
     Process a single API entry and add to database.
     
@@ -121,7 +121,7 @@ def process_api_entry(entry: dict, db_path: str) -> Tuple[bool, str]:
         
         try:
             # Convert Flags object to int for database storage
-            db.add_word(word, fl, uuid, flags.to_int())
+            db.add_word(word, level, fl, uuid, flags.to_int())
             logger.info(f"Added word '{word}' with uuid {uuid}")
             
             if shortdef != []:

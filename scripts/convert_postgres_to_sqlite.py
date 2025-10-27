@@ -77,12 +77,12 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         for i in range(0, len(words), batch_size):
             batch = words[i:i+batch_size]
             word_data = [
-                (w.word, w.functional_label, w.uuid, w.flags)
+                (w.word, w.functional_label, w.uuid, w.flags, w.level)
                 for w in batch
             ]
             
             cursor.executemany(
-                "INSERT INTO words (word, functional_label, uuid, flags) VALUES (?, ?, ?, ?)",
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
                 word_data
             )
             word_count += len(batch)
@@ -123,12 +123,15 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
                 )
                 asset_count += 1
             
-            if asset_count % 1000 == 0:
+            if asset_count > 0 and asset_count % 1000 == 0:
                 logger.info(f"  Transferred {asset_count} assets...")
                 conn.commit()
         
         conn.commit()
-        logger.info(f"  Total assets transferred: {asset_count}")
+        if asset_count > 0:
+            logger.info(f"  Total assets transferred: {asset_count}")
+        else:
+            logger.info(f"  No assets to transfer")
         
         # Transfer stories if they exist
         try:

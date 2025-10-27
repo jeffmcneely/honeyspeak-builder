@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from celery import Celery, Task
 from celery.utils.log import get_task_logger
 from datetime import datetime
+import re
 
 # Add scripts directory to path so we can import libs
 script_dir = Path(__file__).parent
@@ -89,6 +90,8 @@ app.conf.update(
 def fetch_and_process_word(
     self,
     word: str,
+    function_label: str,
+    level: str,
     db_path: str,
     api_key: str,
     usage_file: Optional[str] = None
@@ -127,7 +130,7 @@ def fetch_and_process_word(
     results = []
     for entry in data:
         if isinstance(entry, dict):
-            success, message = process_api_entry(entry, db_path)
+            success, message = process_api_entry(entry, function_label, level, db_path)
             results.append({"success": success, "message": message})
             logger.info(f"Entry result: {message}")
     
@@ -148,7 +151,8 @@ def process_wordlist(
     self,
     wordlist: List[str],
     db_path: str,
-    api_key: str
+    api_key: str,
+    level: str = "A1"
 ) -> Dict:
     """
     Process a list of words.
@@ -164,16 +168,41 @@ def process_wordlist(
     logger.info(f"Processing {len(wordlist)} words")
     
     results = []
-    for i, word in enumerate(wordlist):
-        logger.info(f"Progress: {i+1}/{len(wordlist)} - {word}")
-        result = fetch_and_process_word(word, db_path, api_key)
-        results.append(result)
-        
-        # Update task progress
-        self.update_state(
-            state='PROGRESS',
-            meta={'current': i+1, 'total': len(wordlist), 'word': word}
-        )
+    for i, line in enumerate(wordlist):
+        word = line.strip()
+        match = re.match(r"^([a-zA-Z ]+) ([a-z./, ]+)$", word)
+        if not match:
+            continue
+        word = match.group(1)
+        for function_label_abbreviation in match.group(2).split(","):
+            match function_label_abbreviation:
+                case 'n.':
+                    fun_label = 'noun'
+                case 'v.':
+                    fun_label = 'verb'
+                case 'adj.':
+                    fun_label = 'adjective'
+                case 'adv.':
+                    fun_label = 'adverb'
+                case 'prep.':
+                    fun_label = 'preposition'
+                case 'conj.':
+                    fun_label = 'conjunction'
+                case 'interj.':
+                    fun_label = 'interjection'
+                case 'pron.':
+                    fun_label = 'pronoun'
+                case _:
+                    fun_label = function_label_abbreviation
+            logger.info(f"Progress: {i+1}/{len(wordlist)} - {word}")
+            result = fetch_and_process_word(word, fun_label, level, db_path, api_key)
+            results.append(result)
+
+            # Update task progress
+            self.update_state(
+                state='PROGRESS',
+                meta={'current': i+1, 'total': len(wordlist), 'word': word}
+            )
     
     total_count = get_word_count(db_path)
     
@@ -227,9 +256,25 @@ def generate_definition_audio_task(
     audio_voice: str = "alloy"
 ) -> Dict:
     """Generate audio for a definition."""
+    import time
+    start_time = time.time()
+    
     logger.info(f"Generating definition audio: {uuid}_{def_id}_{i}")
     result = generate_definition_audio(definition, uuid, def_id, output_dir, i, audio_model, audio_voice)
-    logger.info(f"Definition audio result: {result['status']}")
+    
+    elapsed_time = time.time() - start_time
+    result['elapsed_time'] = elapsed_time
+    logger.info(f"Definition audio result: {result['status']} (took {elapsed_time:.2f}s)")
+    
+    # Store timing in Redis for estimations
+    try:
+        from celery import current_app
+        redis_client = current_app.broker_connection().channel().client
+        redis_client.lpush('task_times:generate_definition_audio', elapsed_time)
+        redis_client.ltrim('task_times:generate_definition_audio', 0, 99)  # Keep last 100
+    except Exception as e:
+        logger.debug(f"Could not store timing: {e}")
+    
     return result
 
 
@@ -246,9 +291,25 @@ def generate_definition_image_task(
     image_size: str = "vertical"
 ) -> Dict:
     """Generate image for a definition."""
+    import time
+    start_time = time.time()
+    
     logger.info(f"Generating definition image: {uuid}_{def_id}_{i}")
     result = generate_definition_image(definition, uuid, def_id, output_dir, word, i, image_model, image_size)
-    logger.info(f"Definition image result: {result['status']}")
+    
+    elapsed_time = time.time() - start_time
+    result['elapsed_time'] = elapsed_time
+    logger.info(f"Definition image result: {result['status']} (took {elapsed_time:.2f}s)")
+    
+    # Store timing in Redis for estimations
+    try:
+        from celery import current_app
+        redis_client = current_app.broker_connection().channel().client
+        redis_client.lpush('task_times:generate_definition_image', elapsed_time)
+        redis_client.ltrim('task_times:generate_definition_image', 0, 99)  # Keep last 100
+    except Exception as e:
+        logger.debug(f"Could not store timing: {e}")
+    
     return result
 
 
@@ -357,7 +418,22 @@ def generate_all_assets(
     logger.info(f"[CELERY DEBUG] Output directory exists: {Path(output_dir).exists()}")
     logger.info(f"[CELERY DEBUG] Absolute output path: {Path(output_dir).resolve()}")
     
+    # Load existing filenames once at the start
+    logger.info("Scanning output directory for existing assets...")
+    existing_files = set()
+    try:
+        if os.path.exists(output_dir):
+            existing_files = {f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))}
+            logger.info(f"Found {len(existing_files)} existing asset files")
+        else:
+            logger.info("Output directory does not exist yet, no existing files")
+    except Exception as e:
+        logger.warning(f"Error scanning output directory: {e}")
+    
     results = []
+    tasks_queued = 0
+    tasks_skipped = 0
+    
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
         
@@ -367,12 +443,58 @@ def generate_all_assets(
         db.close()
         
         for uuid in uuids:
-            result = generate_assets_for_word(
-                word.word, uuid, db_path, output_dir,
-                generate_audio, generate_images,
-                audio_model, audio_voice, image_model, image_size
-            )
-            results.append(result)
+            # Get definitions to check which assets would be generated
+            db = Dictionary(db_path)
+            definitions = db.get_shortdefs(uuid)
+            db.close()
+            
+            word_result = {"word": word.word, "uuid": uuid, "word_audio": None, "definitions": []}
+            
+            # Check word audio
+            word_audio_file = f"word_{uuid}_0.aac"
+            if word_audio_file not in existing_files and generate_audio:
+                audio_task = generate_word_audio_task.delay(
+                    word.word, uuid, output_dir, audio_model, audio_voice
+                )
+                word_result["word_audio"] = {"task_id": audio_task.id, "status": "queued"}
+                tasks_queued += 1
+            else:
+                word_result["word_audio"] = {"status": "skipped", "reason": "exists"}
+                tasks_skipped += 1
+            
+            # Check definition assets
+            for defn in definitions:
+                def_results = {"id": defn.id, "audio_tasks": [], "image_tasks": []}
+                
+                # Check 2 variants of each asset (i=0, i=1)
+                for variant_i in range(2):
+                    # Check definition audio
+                    def_audio_file = f"shortdef_{uuid}_{defn.id}_{variant_i}.aac"
+                    if def_audio_file not in existing_files and generate_audio:
+                        audio_task = generate_definition_audio_task.delay(
+                            defn.definition, uuid, defn.id, output_dir, variant_i, audio_model, audio_voice
+                        )
+                        def_results["audio_tasks"].append({"i": variant_i, "task_id": audio_task.id, "status": "queued"})
+                        tasks_queued += 1
+                    else:
+                        def_results["audio_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
+                        tasks_skipped += 1
+                    
+                    # Check definition image
+                    def_image_file = f"image_{uuid}_{defn.id}_{variant_i}.png"
+                    if def_image_file not in existing_files and generate_images:
+                        image_task = generate_definition_image_task.delay(
+                            defn.definition, uuid, defn.id, output_dir, word.word, variant_i, image_model, image_size
+                        )
+                        def_results["image_tasks"].append({"i": variant_i, "task_id": image_task.id, "status": "queued"})
+                        tasks_queued += 1
+                    else:
+                        def_results["image_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
+                        tasks_skipped += 1
+                
+                word_result["definitions"].append(def_results)
+            
+            results.append(word_result)
         
         # Update task progress
         self.update_state(
@@ -381,11 +503,14 @@ def generate_all_assets(
         )
     
     logger.info(f"Asset generation complete: {len(results)} word entries processed")
+    logger.info(f"Tasks queued: {tasks_queued}, Tasks skipped (existing): {tasks_skipped}")
     
     return {
         "status": "success",
         "words_processed": len(words),
         "entries_processed": len(results),
+        "tasks_queued": tasks_queued,
+        "tasks_skipped": tasks_skipped,
         "output_dir": output_dir
     }
 
@@ -401,16 +526,25 @@ def encode_and_package_audio(
     db_path: str,
     uuid: str,
     assetgroup: str,
-    sid: int,
+    defn_id: int,
+    variant: int,
     bitrate: int = 32
 ) -> Dict:
     """
     Encode an audio file and add it to a package.
+    Does NOT store metadata - caller is responsible for batching metadata storage.
+    
+    Args:
+        defn_id: Definition ID (0 for word audio)
+        variant: Variant number (0 or 1)
     
     Returns:
         Dict with encoding and packaging results
     """
-    logger.info(f"Encoding and packaging audio: {input_file}")
+    # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
+    sid = defn_id * 100 + variant
+    
+    logger.info(f"Encoding and packaging audio: {input_file} (sid={sid})")
     
     # Encode
     encode_result = encode_audio_file(input_file, output_dir, bitrate)
@@ -422,10 +556,8 @@ def encode_and_package_audio(
     if not package_id:
         return {"status": "error", "error": "Failed to add to package"}
     
-    # Store metadata
+    # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
-    
     logger.info(f"Audio packaged: {filename} -> {package_id}")
     
     return {
@@ -446,16 +578,25 @@ def encode_and_package_image(
     db_path: str,
     uuid: str,
     assetgroup: str,
-    sid: int,
+    defn_id: int,
+    variant: int,
     quality: int = 25
 ) -> Dict:
     """
     Encode an image file and add it to a package.
+    Does NOT store metadata - caller is responsible for batching metadata storage.
+    
+    Args:
+        defn_id: Definition ID (0 for word images)
+        variant: Variant number (0 or 1)
     
     Returns:
         Dict with encoding and packaging results
     """
-    logger.info(f"Encoding and packaging image: {input_file}")
+    # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
+    sid = defn_id * 100 + variant
+    
+    logger.info(f"Encoding and packaging image: {input_file} (sid={sid})")
     
     # Encode
     encode_result = encode_image_file(input_file, output_dir, quality)
@@ -467,10 +608,8 @@ def encode_and_package_image(
     if not package_id:
         return {"status": "error", "error": "Failed to add to package"}
     
-    # Store metadata
+    # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    metadata_result = store_asset_metadata(db_path, uuid, assetgroup, sid, package_id, filename)
-    
     logger.info(f"Image packaged: {filename} -> {package_id}")
     
     return {
@@ -495,34 +634,89 @@ def package_all_assets(
     Returns:
         Dict with packaging results
     """
+    import tempfile
+    import shutil
+    import glob
+    
     logger.info("Starting asset packaging")
+    
+    # Clean package directory - remove all existing package files
+    logger.info(f"Cleaning package directory: {package_dir}")
+    if os.path.exists(package_dir):
+        for file in os.listdir(package_dir):
+            file_path = os.path.join(package_dir, file)
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    logger.debug(f"Removed package file: {file}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove {file}: {e}")
+    
+    # Delete all "low_*" files from asset directory
+    logger.info(f"Cleaning low-quality assets from: {asset_dir}")
+    if os.path.exists(asset_dir):
+        low_files = glob.glob(os.path.join(asset_dir, "low_*"))
+        for file_path in low_files:
+            try:
+                os.remove(file_path)
+                logger.debug(f"Removed: {os.path.basename(file_path)}")
+            except Exception as e:
+                logger.warning(f"Failed to remove {file_path}: {e}")
+        logger.info(f"Removed {len(low_files)} low-quality asset files")
     
     # Determine packaging SQLite DB path. If a PostgreSQL connection is
     # configured, convert Postgres -> SQLite for packaging so assets are
     # always written into a SQLite database.
     postgres_conn = os.getenv("POSTGRES_CONNECTION")
     packaging_db_path = None
+    temp_db_path = None
+    final_db_destination = None
 
     if postgres_conn:
-        # Prefer an explicit sqlite path if provided, otherwise use local 'Dictionary.sqlite'
-        if db_path and str(db_path).lower().endswith('.sqlite'):
-            packaging_db_path = db_path
-        else:
-            packaging_db_path = os.path.join(os.getcwd(), "Dictionary.sqlite")
-
+        # Create temp directory for SQLite file
+        temp_dir = tempfile.mkdtemp(prefix="honeyspeak_pkg_")
+        temp_db_path = os.path.join(temp_dir, "Dictionary.sqlite")
+        packaging_db_path = temp_db_path
+        
+        # Final destination will be in /data/honeyspeak/assets
+        final_db_destination = "/data/honeyspeak/assets/Dictionary.sqlite"
+        
+        logger.info(f"[PACKAGE] Created temp directory: {temp_dir}")
+        logger.info(f"[PACKAGE] Temp DB path: {temp_db_path}")
+        logger.info(f"[PACKAGE] Final destination: {final_db_destination}")
         logger.info(f"Postgres detected - converting to SQLite for packaging: {packaging_db_path}")
+        
         from scripts.convert_postgres_to_sqlite import convert_database
-
         ok = convert_database(postgres_conn, packaging_db_path)
+        
         if not ok:
             logger.error("Postgres -> SQLite conversion failed, aborting packaging")
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
             return {"status": "error", "message": "Postgres->SQLite conversion failed"}
     else:
         # No Postgres - ensure we have a sqlite path to operate on
         if db_path and str(db_path).lower().endswith('.sqlite'):
-            packaging_db_path = db_path
+            # If db_path looks like it's in /data, create temp copy
+            if db_path.startswith('/data'):
+                temp_dir = tempfile.mkdtemp(prefix="honeyspeak_pkg_")
+                temp_db_path = os.path.join(temp_dir, "Dictionary.sqlite")
+                
+                logger.info(f"[PACKAGE] DB path is in /data, creating temp copy")
+                logger.info(f"[PACKAGE] Copying {db_path} -> {temp_db_path}")
+                
+                shutil.copy(db_path, temp_db_path)
+                packaging_db_path = temp_db_path
+                final_db_destination = "/data/honeyspeak/assets/Dictionary.sqlite"
+                
+                logger.info(f"[PACKAGE] Temp DB created: {temp_db_path}")
+                logger.info(f"[PACKAGE] Final destination: {final_db_destination}")
+            else:
+                packaging_db_path = db_path
         else:
             packaging_db_path = os.environ.get("DATABASE_PATH", "Dictionary.sqlite")
+
+    logger.info(f"[PACKAGE] Using packaging DB: {packaging_db_path}")
 
     # Clean existing packages and metadata in the packaging DB
     clean_packages(package_dir)
@@ -538,6 +732,9 @@ def package_all_assets(
     logger.info(f"Packaging assets for {len(words)} words")
     
     results = []
+    asset_metadata_batch = []
+    BATCH_SIZE = 1000
+    
     for i, word in enumerate(words):
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
 
@@ -550,33 +747,67 @@ def package_all_assets(
         word_audio_file = f"word_{word.uuid}_0.aac"
         audio_result = encode_and_package_audio(
             word_audio_file, asset_dir, package_dir, packaging_db_path,
-            word.uuid, "word", 0
+            word.uuid, "word", 0, 0  # defn_id=0, variant=0 for word audio
         )
         results.append(audio_result)
+        
+        # Collect metadata for batching instead of storing immediately
+        if audio_result.get("status") == "success":
+            # sid for word audio is always 0 (defn_id=0, variant=0 -> 0*100+0 = 0)
+            asset_metadata_batch.append({
+                'uuid': word.uuid,
+                'assetgroup': 'word',
+                'sid': 0,
+                'package_id': audio_result['package_id'],
+                'filename': audio_result['filename']
+            })
         
         # Package definition assets
         for defn in definitions:
             # Package 2 variants of definition audio (i=0, i=1)
-            for i in range(2):
-                def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{i}.aac"
-                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                audio_sid = defn.id * 100 + i
+            for variant_i in range(2):
+                def_audio_file = f"shortdef_{word.uuid}_{defn.id}_{variant_i}.aac"
                 audio_result = encode_and_package_audio(
                     def_audio_file, asset_dir, package_dir, packaging_db_path,
-                    word.uuid, "shortdef", audio_sid
+                    word.uuid, "shortdef", defn.id, variant_i
                 )
                 results.append(audio_result)
+                
+                if audio_result.get("status") == "success":
+                    # sid = defn.id * 100 + variant_i (computed inside the task)
+                    asset_metadata_batch.append({
+                        'uuid': word.uuid,
+                        'assetgroup': 'shortdef',
+                        'sid': defn.id,
+                        'package_id': audio_result['package_id'],
+                        'filename': audio_result['filename']
+                    })
             
             # Package 2 variants of definition image (i=0, i=1)
-            for i in range(2):
-                def_image_file = f"image_{word.uuid}_{defn.id}_{i}.png"
-                # Encode both def_id and variant i into sid: sid = def_id * 100 + i
-                image_sid = defn.id * 100 + i
+            for variant_i in range(2):
+                def_image_file = f"image_{word.uuid}_{defn.id}_{variant_i}.png"
                 image_result = encode_and_package_image(
                     def_image_file, asset_dir, package_dir, packaging_db_path,
-                    word.uuid, "image", image_sid
+                    word.uuid, "image", defn.id, variant_i
                 )
                 results.append(image_result)
+                
+                if image_result.get("status") == "success":
+                    asset_metadata_batch.append({
+                        'uuid': word.uuid,
+                        'assetgroup': 'image',
+                        'sid': defn.id,
+                        'variant': variant_i,
+                        'package_id': image_result['package_id'],
+                        'filename': image_result['filename']
+                    })
+        
+        # Flush batch when it reaches BATCH_SIZE
+        if len(asset_metadata_batch) >= BATCH_SIZE:
+            from libs.package_ops import store_asset_metadata_batch
+            batch_result = store_asset_metadata_batch(packaging_db_path, asset_metadata_batch)
+            logger.info(f"Flushed {batch_result.get('count', 0)} asset metadata entries")
+            asset_metadata_batch = []
         
         # Update task progress
         self.update_state(
@@ -584,14 +815,61 @@ def package_all_assets(
             meta={'current': i+1, 'total': len(words), 'word': word.word}
         )
     
+    # Flush any remaining metadata
+    if asset_metadata_batch:
+        from libs.package_ops import store_asset_metadata_batch
+        batch_result = store_asset_metadata_batch(packaging_db_path, asset_metadata_batch)
+        logger.info(f"Flushed final {batch_result.get('count', 0)} asset metadata entries")
+    
     success_count = sum(1 for r in results if r.get("status") == "success")
     logger.info(f"Packaging complete: {success_count}/{len(results)} successful")
+    
+    # Execute PRAGMA journal_mode=DELETE to clean up WAL/SHM files
+    try:
+        logger.info("[PACKAGE] Converting database to DELETE journal mode (cleaning up WAL/SHM)...")
+        from libs.sqlite_dictionary import SQLiteDictionary
+        db = SQLiteDictionary(packaging_db_path)
+        db.connection.execute("PRAGMA journal_mode=DELETE")
+        db.close()
+        logger.info("[PACKAGE] ✓ Converted to DELETE journal mode")
+    except Exception as e:
+        logger.error(f"[PACKAGE] Error converting to DELETE mode: {e}")
+    
+    # Move temp DB to final destination if needed
+    if temp_db_path and final_db_destination:
+        try:
+            logger.info(f"[PACKAGE] Moving temp DB to final destination")
+            logger.info(f"[PACKAGE] Source: {temp_db_path}")
+            logger.info(f"[PACKAGE] Destination: {final_db_destination}")
+            
+            # Ensure destination directory exists
+            os.makedirs(os.path.dirname(final_db_destination), exist_ok=True)
+            
+            # Move the database file
+            shutil.copy(temp_db_path, final_db_destination)
+            logger.info(f"[PACKAGE] ✓ Database moved to {final_db_destination}")
+            
+            # Clean up temp directory
+            temp_dir = os.path.dirname(temp_db_path)
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info(f"[PACKAGE] ✓ Cleaned up temp directory: {temp_dir}")
+            
+        except Exception as e:
+            logger.error(f"[PACKAGE] Error moving database: {e}")
+            return {
+                "status": "error",
+                "message": f"Packaging succeeded but failed to move database: {e}",
+                "words_processed": len(words),
+                "assets_processed": len(results),
+                "assets_success": success_count
+            }
     
     return {
         "status": "success",
         "words_processed": len(words),
         "assets_processed": len(results),
-        "assets_success": success_count
+        "assets_success": success_count,
+        "database_path": final_db_destination if final_db_destination else packaging_db_path
     }
 
 
