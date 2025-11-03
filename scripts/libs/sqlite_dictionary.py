@@ -388,7 +388,7 @@ class SQLiteDictionary:
             print(f"[get_words_by_level] Exception: {e}")
             return []
 
-    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[str] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[str] = None, function_label: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
@@ -399,6 +399,7 @@ class SQLiteDictionary:
             limit: Maximum number of rows to return
             starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
             level: Filter by CEFR level (e.g., 'A1', 'A2', 'B1', 'B2', 'C1', 'C2')
+            function_label: Filter by function label (e.g., noun, verb, adjective, adverb)
         
         Returns:
             List of dicts with keys: uuid, word, functional_label, flags, level, def_id, definition
@@ -428,6 +429,10 @@ class SQLiteDictionary:
             if level:
                 conditions.append("w.level = ?")
                 params.append(level)
+
+            if function_label:
+                conditions.append("w.functional_label = ?")
+                params.append(function_label)
             
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)

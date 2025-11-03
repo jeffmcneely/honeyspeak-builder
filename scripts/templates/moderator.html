@@ -186,6 +186,13 @@
         <button class="btn btn-sm btn-outline-info ms-2" onclick="refreshCache()" title="Rescan asset directory and refresh cache">
           🔄 Refresh Cache
         </button>
+        <span class="ms-4"><strong>Function label:</strong></span>
+        <div id="function-label-buttons" class="ms-2 btn-group" role="group">
+          <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('noun', event)">Noun</button>
+          <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('verb', event)">Verb</button>
+          <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('adjective', event)">Adjective</button>
+          <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('adverb', event)">Adverb</button>
+        </div>
       </div>
       <div id="letter-buttons">
         <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('a')">A</button>
@@ -234,34 +241,34 @@
     </div>
 
     <script>
-      let currentLetter = null;
+  let currentLetter = null;
+  let currentFunctionLabel = null;
       
       // Fetch and display definitions via AJAX
-      async function loadDefinitions(letter = null) {
+      async function loadDefinitions(letter = null, functionLabel = null) {
         try {
           document.getElementById('loading').style.display = 'block';
           document.getElementById('no-filter-message').style.display = 'none';
           document.getElementById('definitions-list').style.display = 'none';
-          
-          const url = letter ? `/moderator/api/definitions?letter=${encodeURIComponent(letter)}` : '/moderator/api/definitions';
+          let url = '/moderator/api/definitions';
+          const params = [];
+          if (letter) params.push(`letter=${encodeURIComponent(letter)}`);
+          if (functionLabel) params.push(`function_label=${encodeURIComponent(functionLabel)}`);
+          if (params.length > 0) url += '?' + params.join('&');
           const response = await fetch(url);
           const data = await response.json();
-          
           document.getElementById('loading').style.display = 'none';
           const listContainer = document.getElementById('definitions-list');
           listContainer.style.display = 'block';
-          listContainer.innerHTML = ''; // Clear existing
-          
+          listContainer.innerHTML = '';
           if (!data.definitions || data.definitions.length === 0) {
             listContainer.innerHTML = '<div class="alert alert-info">No definitions with images found for this filter.</div>';
             return;
           }
-          
           data.definitions.forEach(def => {
             const item = createDefinitionItem(def);
             listContainer.appendChild(item);
           });
-          
         } catch (error) {
           console.error('Error loading definitions:', error);
           document.getElementById('loading').innerHTML = 
@@ -271,7 +278,6 @@
       
       function filterByLetter(letter) {
         currentLetter = letter;
-        
         // Update button states
         document.querySelectorAll('#letter-buttons .btn').forEach(btn => {
           btn.classList.remove('active', 'btn-primary');
@@ -279,19 +285,35 @@
         });
         event.target.classList.remove('btn-outline-primary');
         event.target.classList.add('active', 'btn-primary');
-        
-        loadDefinitions(letter);
+        loadDefinitions(currentLetter, currentFunctionLabel);
+      }
+
+      function filterByFunctionLabel(label, event) {
+        currentFunctionLabel = label;
+        // Update button states
+        document.querySelectorAll('#function-label-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-success');
+          btn.classList.add('btn-outline-success');
+        });
+        if (event && event.target) {
+          event.target.classList.remove('btn-outline-success');
+          event.target.classList.add('active', 'btn-success');
+        }
+        loadDefinitions(currentLetter, currentFunctionLabel);
       }
       
       function clearFilter() {
         currentLetter = null;
-        
+        currentFunctionLabel = null;
         // Update button states
         document.querySelectorAll('#letter-buttons .btn').forEach(btn => {
           btn.classList.remove('active', 'btn-primary');
           btn.classList.add('btn-outline-primary');
         });
-        
+        document.querySelectorAll('#function-label-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-success');
+          btn.classList.add('btn-outline-success');
+        });
         // Show no filter message
         document.getElementById('loading').style.display = 'none';
         document.getElementById('definitions-list').style.display = 'none';

@@ -157,7 +157,7 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
     return sorted(files)
 
 
-def collect_rows_with_images(asset_dir: str, starting_letter: str = None) -> List[Dict]:
+def collect_rows_with_images(asset_dir: str, starting_letter: str = None, function_label: str = None) -> List[Dict]:
     """Collect definitions that have images from the database and Redis cache.
     
     Args:
@@ -195,25 +195,19 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None) -> Lis
 
     db = Dictionary()
     rows: List[Dict] = []
-    
     try:
-        # OPTIMIZED: Single query with SQL-level filtering by starting letter
-        # This pushes the letter filter into the database query instead of Python
+        # Pass function_label to DB query if provided
         query_start = time.time() if DEBUG_TIMING else None
-        results = db.get_all_definitions_with_words(starting_letter=starting_letter)
+        results = db.get_all_definitions_with_words(starting_letter=starting_letter, function_label=function_label)
         query_time = time.time() - query_start if DEBUG_TIMING else 0
-        
         if DEBUG_TIMING:
             print(f"[TIMING] SQL query returned {len(results)} definitions in {query_time:.4f}s")
-        
         lookup_start = time.time() if DEBUG_TIMING else None
         lookup_count = 0
         image_found_count = 0
-        
         for r in results:
             lookup_count += 1
             images = list_images_for(r['uuid'], r['def_id'])
-            # Only include definitions that have images
             if images:
                 image_found_count += 1
                 flags = Flags.from_int(r['flags'])
@@ -234,14 +228,12 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None) -> Lis
                         "images": images,
                     }
                 )
-        
         if DEBUG_TIMING:
             lookup_time = time.time() - lookup_start
             total_time = time.time() - overall_start
             print(f"[TIMING] Redis lookups: {lookup_count} definitions checked, {image_found_count} with images, took {lookup_time:.4f}s")
             print(f"[TIMING] Total collect_rows_with_images: {total_time:.4f}s (query={query_time:.4f}s, redis={lookup_time:.4f}s)")
             print(f"[TIMING] Breakdown: SQL={query_time/total_time*100:.1f}%, Redis={lookup_time/total_time*100:.1f}%")
-            
     finally:
         try:
             db.close()
@@ -259,27 +251,22 @@ def index():
 @moderator_bp.route("/api/definitions")
 def get_definitions():
     """API endpoint to get definitions with images via AJAX.
-    
     Query params:
         letter: Filter by starting letter (a-z or '-' for non-alphabetic)
+        function_label: Filter by function label (noun, verb, adverb, adjective)
     """
     from flask import request
-    
     request_start = time.time() if DEBUG_TIMING else None
-    
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
     starting_letter = request.args.get("letter", None)
-    
+    function_label = request.args.get("function_label", None)
     if DEBUG_TIMING:
-        print(f"\n[TIMING] ========== API REQUEST: /api/definitions?letter={starting_letter} ==========")
-    
-    rows = collect_rows_with_images(asset_dir, starting_letter)
-    
+        print(f"\n[TIMING] ========== API REQUEST: /api/definitions?letter={starting_letter}&function_label={function_label} ==========")
+    rows = collect_rows_with_images(asset_dir, starting_letter, function_label)
     if DEBUG_TIMING:
         total_time = time.time() - request_start
         print(f"[TIMING] Total API response time: {total_time:.4f}s for {len(rows)} definitions")
         print(f"[TIMING] ========== END REQUEST ==========\n")
-    
     return jsonify({"definitions": rows})
 
 

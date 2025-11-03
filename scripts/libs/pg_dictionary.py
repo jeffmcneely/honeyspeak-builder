@@ -361,7 +361,7 @@ class PostgresDictionary:
             result.append((word, definitions))
         return result
     
-    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, function_label: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
@@ -371,6 +371,7 @@ class PostgresDictionary:
         Args:
             limit: Maximum number of rows to return
             starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
+            function_label: Filter by function label (e.g., noun, verb, adjective, adverb)
         
         Returns:
             List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
@@ -382,22 +383,22 @@ class PostgresDictionary:
             FROM words w
             INNER JOIN shortdef s ON w.uuid = s.uuid
         """
-        
         params = []
+        conditions = []
         if starting_letter:
             if starting_letter == '-':
-                # Non-alphabetic: NOT (a-z or A-Z)
-                query += " WHERE LOWER(SUBSTRING(w.word, 1, 1)) !~ '^[a-z]$'"
+                conditions.append("LOWER(SUBSTRING(w.word, 1, 1)) !~ '^[a-z]$'")
             else:
-                # Specific letter
-                query += " WHERE LOWER(SUBSTRING(w.word, 1, 1)) = %s"
+                conditions.append("LOWER(SUBSTRING(w.word, 1, 1)) = %s")
                 params.append(starting_letter.lower())
-        
+        if function_label:
+            conditions.append("w.functional_label = %s")
+            params.append(function_label)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY w.word, s.id"
-        
         if limit:
             query += f" LIMIT {limit}"
-        
         return self.execute_fetchall(query, tuple(params) if params else None)
     
     def get_words_needing_assets(self, assetgroup: str, limit: Optional[int] = None) -> List[str]:
