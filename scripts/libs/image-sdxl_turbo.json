@@ -12,7 +12,7 @@
   },
   "6": {
     "inputs": {
-      "text": ", vector icon, pictogram, bold silhouette, thick outline, solid fill, two-tone (black on white), orthographic, full object visible, square framing",
+      "text": " Create flat vector illustration of high-contrast educational vertical aspect picture\n  that represents: aircraft carrier. a military ship that has a large deck where aircraft take off and land.",
       "clip": [
         "20",
         1
@@ -25,7 +25,7 @@
   },
   "7": {
     "inputs": {
-      "text": " 3d render, text, watermark, logo, collage, multiple subjects, nsfw, sexual, erotic, porn, explicit, lewd, sensual, adult content, inappropriate, suggestive, violence\n",
+      "text": "nudity, sexual, suggestive, offensive, nsfw, erotic, porn, explicit, lewd, sensual, adult content, inappropriate, violence, text, watermark, logo, collage, multiple subjects, clutter, extra objects, duplicates, gradients, shading, 3d render, photorealistic, realistic, detailed background, busy background\n",
       "clip": [
         "20",
         1
@@ -55,10 +55,10 @@
   "13": {
     "inputs": {
       "add_noise": true,
-      "noise_seed": 635389107527250,
-      "cfg": 1,
+      "noise_seed": 1063171352213706,
+      "cfg": 2,
       "model": [
-        "20",
+        "30",
         0
       ],
       "positive": [
@@ -89,7 +89,7 @@
   },
   "14": {
     "inputs": {
-      "sampler_name": "euler_ancestral"
+      "sampler_name": "dpm_2"
     },
     "class_type": "KSamplerSelect",
     "_meta": {
@@ -107,7 +107,7 @@
   },
   "22": {
     "inputs": {
-      "steps": 3,
+      "steps": 10,
       "denoise": 1,
       "model": [
         "20",
@@ -130,6 +130,25 @@
     "class_type": "SaveImage",
     "_meta": {
       "title": "Save Image"
+    }
+  },
+  "30": {
+    "inputs": {
+      "lora_name": "Flat_Vector_XL.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "20",
+        0
+      ],
+      "clip": [
+        "20",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
     }
   }
 }

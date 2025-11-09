@@ -18,6 +18,17 @@ IMAGE_SIZES = ["square", "vertical", "horizontal"]
 def strip_tags(text: str) -> str:
     """Remove anything between curly braces {} including the braces themselves."""
     return re.sub(r"\{.*?\}", "", text)
+def strip_tags_smart(text: str) -> str:
+    text = re.sub(r"\{b\}.+?\{/b\}", "", text)
+    text = re.sub(r"\{bc\}", "", text)
+    text = re.sub(r"\{inf\}.+?\{/inf\}", "", text)
+    text = re.sub(r"\{it\}.+?\{/it\}", "", text)
+    text = re.sub(r"\{i{ldquo}\}", "", text)
+    text = re.sub(r"\{i{ldquo}\}", "", text)
+    text = re.sub(r"\{sd\}.+?\{/sd\}", "", text)
+    text = re.sub(r"\{sup\}.+?\{/sup\}", "", text)
+    return text
+
 
 def log_400_error(error: BadRequestError, text: str, context: str) -> None:
     error_file = Path("errors.txt")

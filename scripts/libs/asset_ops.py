@@ -13,7 +13,7 @@ from typing import Optional, Dict
 from openai import OpenAI
 from openai._exceptions import BadRequestError, OpenAIError
 from .openai_helpers import (
-    strip_tags, log_400_error, call_openai_audio_streaming, 
+    strip_tags, strip_tags_smart, log_400_error, call_openai_audio_streaming, 
     call_openai_audio_non_streaming, call_openai_image,
     audio_format, image_format
 )
@@ -173,7 +173,7 @@ def generate_definition_image(
         logger.info(f"Skipping existing file: {fname}")
         return {"status": "skipped", "file": fname}
     
-    text = strip_tags(definition)
+    text = strip_tags_smart(definition)
     if len(text) < 10:
         logger.warning(f"Text too short for image: {fname}")
         return {"status": "skipped", "file": fname, "reason": "text_too_short"}
@@ -189,6 +189,10 @@ def generate_definition_image(
         elif image_size == "horizontal":
             size = "1536x1024"
             aspect_words = "horizontal illustration (16:9 aspect)"
+        prompt = (
+            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"that represents: {word}. {text}"
+        )
     elif image_model == "dall-e-3":
         if image_size == "vertical":
             size = "1024x1792"
@@ -196,12 +200,17 @@ def generate_definition_image(
         elif image_size == "horizontal":
             size = "1792x1024"
             aspect_words = "horizontal illustration (7:4 aspect)"
-    
-    prompt = (
-        f"Create a clean, high-contrast educational non-offensive {aspect_words} "
-        f"that represents: {word}. {text}. No text, centered subject, solid background. "
-        f"The image should not be sexual, suggestive, or depict nudity in any form."
-    )
+        prompt = (
+            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"that represents: {word}. {text}"
+        )
+    elif image_model == "sdxl_turbo":
+        size = "512x768"
+        aspect_words = "vertical illustration (9:16 aspect)"
+        prompt = (
+            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"that represents: {word}. {text}"
+        )
     
     logger.info(f"Generating image for {fname} (size={size}, model={image_model})")
     
@@ -211,7 +220,7 @@ def generate_definition_image(
         try:
             from .sdxl_turbo import generate_image_via_comfy
 
-            return generate_image_via_comfy(word=word,prompt=prompt, text=text, output_path=fname)
+            return generate_image_via_comfy(word=word, text=prompt, output_path=fname)
         except Exception as e:
             logger.exception("sdxl_turbo helper failed: %s", e)
             return {"status": "error", "file": None, "error": str(e)}

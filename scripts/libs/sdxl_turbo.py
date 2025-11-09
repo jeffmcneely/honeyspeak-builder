@@ -56,7 +56,6 @@ def poll_comfyui_history(prompt_id, base_url=None) -> dict:
 
 def generate_image_via_comfy(
     word: str,
-    prompt: str,
     text: str,
     output_path: str,
     cfg_filename: str = "image-sdxl_turbo.json",
@@ -74,14 +73,6 @@ def generate_image_via_comfy(
     Returns:
         Dict containing 'status' and 'file' keys (and 'error' on failure).
     """
-    text = re.sub(r"\{b\}.+?\{/b\}", "", text)
-    text = re.sub(r"\{bc\}", "", text)
-    text = re.sub(r"\{inf\}.+?\{/inf\}", "", text)
-    text = re.sub(r"\{it\}.+?\{/it\}", "", text)
-    text = re.sub(r"\{i{ldquo}\}", "", text)
-    text = re.sub(r"\{i{ldquo}\}", "", text)
-    text = re.sub(r"\{sd\}.+?\{/sd\}", "", text)
-    text = re.sub(r"\{sup\}.+?\{/sup\}", "", text)
 
     # prompt = re.sub(r"\{gloss\}.+?\{/sup\}", "", prompt)
     # prompt = re.sub(r"\{parahw\}.+?\{/sup\}", "", prompt)
