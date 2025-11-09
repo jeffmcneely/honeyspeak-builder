@@ -479,7 +479,9 @@ def generate_all_assets(
                     else:
                         def_results["audio_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
                         tasks_skipped += 1
-                    
+                    # Only generate images for nouns and verbs
+                    if word.functional_label not in ["noun", "verb"]:
+                        continue
                     # Check definition image
                     def_image_file = f"image_{uuid}_{defn.id}_{variant_i}.png"
                     if def_image_file not in existing_files and generate_images:
