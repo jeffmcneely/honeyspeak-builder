@@ -624,6 +624,142 @@ def encode_and_package_image(
 
 
 @app.task(base=LoggingTask, bind=True)
+def delete_conceptual_images(
+    self,
+    db_path: str,
+    asset_dir: str
+) -> Dict:
+    """
+    Delete image assets where functional_label is NOT 'noun' or 'verb'.
+    These are conceptual images (for adjectives, adverbs, etc.) that shouldn't have visual representations.
+    
+    Args:
+        db_path: Path to database
+        asset_dir: Directory containing image assets
+    
+    Returns:
+        Dict with deletion results
+    """
+    logger.info("Starting deletion of conceptual images (non-noun/verb)")
+    
+    try:
+        # Import dictionary at runtime
+        from libs.dictionary import Dictionary
+        import redis as redis_module
+        
+        # Setup Redis for cache invalidation
+        redis_client = None
+        try:
+            broker_url = os.getenv("CELERY_BROKER_URL")
+            if broker_url and broker_url.startswith("redis://"):
+                redis_client = redis_module.from_url(broker_url, decode_responses=True)
+            else:
+                redis_client = redis_module.Redis(
+                    host=os.getenv("REDIS_HOST", "localhost"),
+                    port=int(os.getenv("REDIS_PORT", "6379")),
+                    db=int(os.getenv("REDIS_DB", "0")),
+                    decode_responses=True
+                )
+            redis_client.ping()
+        except Exception as e:
+            logger.warning(f"Redis not available for cache invalidation: {e}")
+            redis_client = None
+        
+        db = Dictionary(db_path)
+        
+        # Get all definitions with words, filtering for non-noun/verb
+        all_definitions = db.get_all_definitions_with_words()
+        
+        # Filter to only non-noun and non-verb entries
+        conceptual_defs = [
+            d for d in all_definitions 
+            if d['functional_label'] not in ['noun', 'verb']
+        ]
+        
+        logger.info(f"Found {len(conceptual_defs)} definitions with non-noun/verb functional labels")
+        
+        deleted_files = 0
+        deleted_db_records = 0
+        errors = []
+        
+        for i, defn in enumerate(conceptual_defs):
+            uuid = defn['uuid']
+            def_id = defn['def_id']
+            word = defn['word']
+            functional_label = defn['functional_label']
+            
+            # Check for image files matching this definition (both variants: 0 and 1)
+            for variant in range(2):
+                # Pattern: image_{uuid}_{def_id}_{variant}.{ext}
+                for ext in ['png', 'jpg', 'heic']:
+                    filename = f"image_{uuid}_{def_id}_{variant}.{ext}"
+                    file_path = Path(asset_dir) / filename
+                    
+                    if file_path.exists():
+                        try:
+                            # Delete the file
+                            file_path.unlink()
+                            deleted_files += 1
+                            logger.info(f"Deleted file: {filename} (word={word}, label={functional_label})")
+                            
+                            # Delete from Redis cache
+                            if redis_client:
+                                try:
+                                    redis_client.srem("moderator:images:all", filename)
+                                except Exception as e:
+                                    logger.warning(f"Failed to remove from Redis cache: {e}")
+                            
+                        except Exception as e:
+                            error_msg = f"Failed to delete {filename}: {e}"
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                
+                # Delete from database (variant is combined with def_id in sid: sid = def_id * 100 + variant)
+                try:
+                    sid = def_id * 100 + variant
+                    db.delete_asset(uuid, 'image', sid)
+                    deleted_db_records += 1
+                    logger.debug(f"Deleted DB record: uuid={uuid}, assetgroup=image, sid={sid}")
+                except Exception as e:
+                    error_msg = f"Failed to delete DB record for {word} (uuid={uuid}, sid={sid}): {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            
+            # Update progress
+            if i % 100 == 0:
+                self.update_state(
+                    state='PROGRESS',
+                    meta={
+                        'current': i+1, 
+                        'total': len(conceptual_defs), 
+                        'deleted_files': deleted_files,
+                        'deleted_db_records': deleted_db_records
+                    }
+                )
+        
+        db.close()
+        
+        logger.info(f"Deletion complete: {deleted_files} files, {deleted_db_records} DB records")
+        
+        return {
+            "status": "success",
+            "definitions_processed": len(conceptual_defs),
+            "deleted_files": deleted_files,
+            "deleted_db_records": deleted_db_records,
+            "errors": errors[:100]  # Limit error list to first 100
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in delete_conceptual_images: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@app.task(base=LoggingTask, bind=True)
 def package_all_assets(
     self,
     db_path: str,

@@ -281,6 +281,29 @@ def refresh_cache():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@moderator_bp.route("/api/delete-conceptual-images", methods=["POST"])
+def delete_conceptual_images_endpoint():
+    """Trigger async deletion of conceptual images (non-noun/verb)."""
+    try:
+        # Import Celery task
+        from celery_tasks import delete_conceptual_images
+        
+        # Get paths from config/env
+        db_path = current_app.config.get("DATABASE_PATH") or os.getenv("DATABASE_PATH")
+        asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
+        
+        # Queue the task
+        task = delete_conceptual_images.delay(db_path, asset_dir)
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "message": "Deletion task queued"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @moderator_bp.route("/asset/<path:filename>", methods=["GET"])  # serve images from ASSET_DIRECTORY
 def serve_asset(filename: str):
     # Prevent directory traversal and enforce naming/extension
