@@ -15,11 +15,18 @@ DEBUG_TIMING = os.getenv("DEBUG_TIMING", "0") in ("1", "true", "True")
 
 # Redis connection - make it lazy to avoid import-time errors
 redis_client = None
+redis_connection_attempted = False  # Track if we've already tried to connect
 
 def get_redis_client():
-    """Get or create Redis client lazily."""
-    global redis_client
-    if redis_client is None:
+    """Get or create Redis client lazily. Only logs connection failure once."""
+    global redis_client, redis_connection_attempted
+    
+    # If we've already tried and failed, return None immediately
+    if redis_connection_attempted and redis_client is None:
+        return None
+    
+    if redis_client is None and not redis_connection_attempted:
+        redis_connection_attempted = True  # Mark that we've tried
         try:
             import redis as redis_module
             
@@ -29,11 +36,34 @@ def get_redis_client():
                 # Parse redis://host:port/db format
                 redis_client = redis_module.from_url(broker_url, decode_responses=True)
             else:
-                # Fall back to individual env vars
+                # Fall back to individual env vars with robust parsing
+                redis_host = os.getenv("REDIS_HOST", "redis")
+                redis_port = os.getenv("REDIS_PORT", "6379")
+                redis_db = os.getenv("REDIS_DB", "0")
+                
+                # Handle cases where port/db might be URLs or invalid values
+                try:
+                    # Extract port number if it's a URL (e.g., tcp://host:port)
+                    if "://" in redis_port:
+                        # Extract port from URL format
+                        import re
+                        port_match = re.search(r':(\d+)$', redis_port)
+                        if port_match:
+                            redis_port = port_match.group(1)
+                        else:
+                            redis_port = "6379"  # Default fallback
+                    
+                    port_int = int(redis_port)
+                    db_int = int(redis_db)
+                except (ValueError, TypeError):
+                    print(f"[MODERATOR] Invalid Redis port/db values: port={redis_port}, db={redis_db}, using defaults")
+                    port_int = 6379
+                    db_int = 0
+                
                 redis_client = redis_module.Redis(
-                    host=os.getenv("REDIS_HOST", "localhost"),
-                    port=int(os.getenv("REDIS_PORT", "6379")),
-                    db=int(os.getenv("REDIS_DB", "0")),
+                    host=redis_host,
+                    port=port_int,
+                    db=db_int,
                     decode_responses=True
                 )
             
@@ -41,8 +71,12 @@ def get_redis_client():
             redis_client.ping()
             print("[MODERATOR] Redis connection established")
         except Exception as e:
-            print(f"[MODERATOR WARNING] Redis not available: {e}")
+            # Log once, then use filesystem fallback silently
+            print(f"[MODERATOR] Redis not available, using filesystem fallback for image lookups")
+            if DEBUG_TIMING:
+                print(f"[MODERATOR DEBUG] Redis error details: {e}")
             redis_client = None
+    
     return redis_client
 
 # Redis key for the image cache
@@ -115,26 +149,56 @@ def get_cached_images() -> Set[str]:
 
 
 def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
-    """Return filenames matching image_{uuid}_{sid}.* from Redis cache.
+    """Return filenames matching image_{uuid}_{sid}.* from Redis cache or filesystem.
 
     Matches both image_{uuid}_{sid}.ext and image_{uuid}_{sid}_N.ext variants.
     
     Args:
         uuid: Word UUID
         sid: Definition ID
-        asset_dir: Unused (kept for backward compatibility)
+        asset_dir: Asset directory path (used for filesystem fallback)
     """
     t0 = time.time() if DEBUG_TIMING else None
     
-    # Get all images from cache
+    # Try to get all images from Redis cache first
     all_images = get_cached_images()
     
+    # If Redis cache is empty, fall back to filesystem scan
     if not all_images:
         if DEBUG_TIMING:
-            print(f"[TIMING] list_images_for({uuid[:8]}, {sid}): Redis cache is empty!")
-        return []
+            print(f"[TIMING] list_images_for({uuid[:8]}, {sid}): Redis cache empty, falling back to filesystem")
+        
+        # Need asset_dir for filesystem fallback
+        if not asset_dir:
+            asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
+        
+        # Direct filesystem check for this specific uuid/sid
+        p = Path(asset_dir)
+        if not p.exists():
+            return []
+        
+        files = []
+        base = f"image_{uuid}_{sid}"
+        
+        # Check exact matches
+        for ext in ALLOWED_EXTS:
+            fname = f"{base}{ext}"
+            if (p / fname).exists() and SAFE_IMAGE_RE.match(fname):
+                files.append(fname)
+        
+        # Check numbered variants (e.g., image_uuid_sid_1.png)
+        prefix = f"{base}_"
+        for img_path in p.glob(f"{prefix}*"):
+            if SAFE_IMAGE_RE.match(img_path.name) and img_path.name not in files:
+                files.append(img_path.name)
+        
+        if DEBUG_TIMING:
+            total_time = time.time() - t0
+            print(f"[TIMING] list_images_for({uuid[:8]}, {sid}): found {len(files)} images in {total_time:.4f}s (filesystem fallback)")
+        
+        return sorted(files)
     
-    # Filter for this specific uuid/sid
+    # Redis cache available - use it for fast lookups
     base = f"image_{uuid}_{sid}"
     files = []
     
@@ -158,36 +222,44 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
 
 
 def collect_rows_with_images(asset_dir: str, starting_letter: str = None, function_label: str = None) -> List[Dict]:
-    """Collect definitions that have images from the database and Redis cache.
+    """Collect definitions that have images from the database and Redis cache (or filesystem fallback).
     
     Args:
-        asset_dir: Directory containing image assets (used for cache warming only)
+        asset_dir: Directory containing image assets (used for cache warming and filesystem fallback)
         starting_letter: Filter words by starting letter (case-insensitive). Use '-' for non-alphabetic.
     """
     overall_start = time.time() if DEBUG_TIMING else None
     
-    # Ensure cache is populated
+    # Try to ensure Redis cache is populated (if Redis is available)
     redis = get_redis_client()
     cache_size = 0
+    using_redis = False
+    
     if redis:
         try:
             cache_size = redis.scard(REDIS_IMAGES_KEY)
         except Exception:
             cache_size = 0
             
-    if cache_size == 0:
-        if DEBUG_TIMING:
-            print(f"[TIMING] Redis cache empty or unavailable, scanning asset directory...")
-        scan_asset_directory_to_redis(asset_dir)
-        if redis:
+        if cache_size == 0:
+            if DEBUG_TIMING:
+                print(f"[TIMING] Redis cache empty, scanning asset directory...")
+            scan_asset_directory_to_redis(asset_dir)
             try:
                 cache_size = redis.scard(REDIS_IMAGES_KEY)
+                using_redis = cache_size > 0
             except Exception:
                 cache_size = 0
+            if DEBUG_TIMING:
+                print(f"[TIMING] Cache populated with {cache_size} images")
+        else:
+            using_redis = True
+            if DEBUG_TIMING:
+                print(f"[TIMING] Using Redis cache ({cache_size} files)")
+    else:
         if DEBUG_TIMING:
-            print(f"[TIMING] Cache populated with {cache_size} images")
-    elif DEBUG_TIMING:
-        print(f"[TIMING] Using cached images ({cache_size} files)")
+            print(f"[TIMING] Redis not available, will use filesystem fallback for each definition")
+        using_redis = False
     
     # Import the unified Dictionary factory at runtime to avoid import-time side-effects
     from libs.dictionary import Dictionary
@@ -207,7 +279,8 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None, functi
         image_found_count = 0
         for r in results:
             lookup_count += 1
-            images = list_images_for(r['uuid'], r['def_id'])
+            # Pass asset_dir for filesystem fallback
+            images = list_images_for(r['uuid'], r['def_id'], asset_dir)
             if images:
                 image_found_count += 1
                 flags = Flags.from_int(r['flags'])
@@ -231,9 +304,10 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None, functi
         if DEBUG_TIMING:
             lookup_time = time.time() - lookup_start
             total_time = time.time() - overall_start
-            print(f"[TIMING] Redis lookups: {lookup_count} definitions checked, {image_found_count} with images, took {lookup_time:.4f}s")
-            print(f"[TIMING] Total collect_rows_with_images: {total_time:.4f}s (query={query_time:.4f}s, redis={lookup_time:.4f}s)")
-            print(f"[TIMING] Breakdown: SQL={query_time/total_time*100:.1f}%, Redis={lookup_time/total_time*100:.1f}%")
+            mode = "Redis" if using_redis else "filesystem"
+            print(f"[TIMING] Image lookups: {lookup_count} definitions checked, {image_found_count} with images, took {lookup_time:.4f}s ({mode})")
+            print(f"[TIMING] Total collect_rows_with_images: {total_time:.4f}s (query={query_time:.4f}s, lookups={lookup_time:.4f}s)")
+            print(f"[TIMING] Breakdown: SQL={query_time/total_time*100:.1f}%, Lookups={lookup_time/total_time*100:.1f}%")
     finally:
         try:
             db.close()

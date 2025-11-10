@@ -62,9 +62,11 @@ spec:
         - name: FLASK_SECRET_KEY
           value: {{ .Values.env.FLASK_SECRET_KEY | default "supersecret" | quote }}
         - name: CELERY_BROKER_URL
-          value: {{ .Values.env.CELERY_BROKER_URL | default "redis://redis:6379/0" | quote }}
+          value: {{ .Values.env.CELERY_BROKER_URL | default "amqp://guest:guest@rabbitmq:5672//" | quote }}
         - name: CELERY_RESULT_BACKEND
           value: {{ .Values.env.CELERY_RESULT_BACKEND | default "redis://redis:6379/0" | quote }}
+        - name: CELERY_BROKER_TRANSPORT_OPTIONS
+          value: '{"queue_arguments": {"x-max-priority": 5}}'
         - name: DICTIONARY_API_KEY
           value: {{ .Values.env.DICTIONARY_API_KEY | default "" | quote }}
         - name: OPENAI_API_KEY

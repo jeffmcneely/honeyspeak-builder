@@ -80,11 +80,11 @@ class PostgresDictionary:
             raise ValueError("POSTGRES_CONNECTION environment variable not set and no connection string provided")
         
         self.logger = logging.getLogger(__name__)
-        self.logger.info(f"[PostgresDictionary] Connecting to PostgreSQL...")
+        self.logger.debug(f"[PostgresDictionary] Connecting to PostgreSQL...")
         
         # Test connection and create schema if needed
         self._ensure_schema()
-        self.logger.info(f"[PostgresDictionary] Ready")
+        self.logger.debug(f"[PostgresDictionary] Ready")
     
     def _get_connection(self):
         """Get a new database connection."""

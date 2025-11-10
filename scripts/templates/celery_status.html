@@ -112,6 +112,9 @@
                 <button onclick="loadStatus()" class="btn btn-primary ms-2">
                     <i class="bi bi-arrow-clockwise"></i> Refresh Now
                 </button>
+                <button onclick="clearQueues()" class="btn btn-danger ms-2">
+                    <i class="bi bi-trash"></i> Clear All Queues
+                </button>
             </div>
         </div>
 
@@ -132,11 +135,16 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="card status-card danger">
-                    <div class="card-body text-center">
-                        <div class="metric-value text-danger" id="pendingCount">-</div>
-                        <div class="metric-label">Pending</div>
+                    <div class="card-body">
+                        <div class="text-center">
+                            <div class="metric-value text-danger" id="pendingCount">-</div>
+                            <div class="metric-label">Total Pending</div>
+                        </div>
+                        <div class="mt-2" style="font-size: 0.75rem;" id="priorityBreakdown">
+                            <!-- Priority breakdown will be inserted here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -156,7 +164,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card status-card success">
                     <div class="card-body text-center">
                         <div class="metric-value text-success" id="workerCount">-</div>
@@ -336,6 +344,22 @@
             document.getElementById('reservedCount').textContent = data.reserved_count;
             document.getElementById('workerCount').textContent = data.workers.length;
             
+            // Update priority breakdown
+            if (data.pending_by_priority) {
+                const breakdownHtml = Object.entries(data.pending_by_priority)
+                    .sort((a, b) => parseInt(b[0]) - parseInt(a[0])) // Sort by priority desc (5 to 0)
+                    .map(([priority, count]) => {
+                        if (count === 0) return '';
+                        const color = priority >= 4 ? 'text-danger' : priority >= 2 ? 'text-warning' : 'text-muted';
+                        return `<div class="${color}">P${priority}: <strong>${count}</strong></div>`;
+                    })
+                    .filter(html => html !== '')
+                    .join('');
+                
+                document.getElementById('priorityBreakdown').innerHTML = breakdownHtml || 
+                    '<div class="text-muted">No pending tasks</div>';
+            }
+            
             // Update timing estimates
             if (data.timing) {
                 const timing = data.timing;
@@ -472,6 +496,42 @@
                         </div>
                     </div>
                 `).join('');
+            }
+        }
+
+        async function clearQueues() {
+            if (!confirm('Are you sure you want to clear ALL pending tasks from the queue? This cannot be undone!')) {
+                return;
+            }
+            
+            const indicator = document.getElementById('refreshIndicator');
+            indicator.classList.add('refreshing');
+            indicator.innerHTML = '<i class="bi bi-trash"></i> Clearing queues...';
+            
+            try {
+                const response = await fetch('/api/celery_clear_queues', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✓ Success!\n\n${data.message}\n\nPurged ${data.purged_count} tasks.`);
+                    // Reload status immediately
+                    await loadStatus();
+                } else {
+                    alert(`✗ Error clearing queues:\n\n${data.error}`);
+                }
+            } catch (error) {
+                alert(`✗ Failed to clear queues:\n\n${error.message}`);
+            } finally {
+                // Reset countdown and indicator
+                countdownSeconds = 30;
+                indicator.classList.remove('refreshing');
+                indicator.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Auto-refresh in <span id="countdown">30</span>s';
             }
         }
 

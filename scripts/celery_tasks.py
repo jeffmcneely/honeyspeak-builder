@@ -68,10 +68,12 @@ class LoggingTask(Task):
 
 
 # Initialize Celery app
+
+# Use RabbitMQ for broker, Redis for result backend
 app = Celery(
     "honeyspeak_tasks",
-    broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
+    broker=os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//"),
+    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
 )
 
 app.conf.update(
@@ -81,6 +83,13 @@ app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
+    broker_transport_options={
+        'priority_steps': list(range(6)),  # 0-5
+        'queue_order_strategy': 'priority',
+        'max_priority': 5,
+        'visibility_timeout': 3600,
+        'queue_arguments': {'x-max-priority': 5},
+    },
 )
 
 
@@ -356,17 +365,19 @@ def generate_assets_for_word(
         
         # Generate 2 variants of each asset (i=0, i=1)
         for i in range(2):
-            if generate_audio:
-                audio_task = generate_definition_audio_task.delay(
-                    defn.definition, uuid, defn.id, output_dir, i, audio_model, audio_voice
-                )
-                def_results["audio_tasks"].append({"i": i, "task_id": audio_task.id})
+                if generate_audio:
+                    audio_task = generate_definition_audio_task.apply_async(
+                        args=(defn.definition, uuid, defn.id, output_dir, i, audio_model, audio_voice),
+                        priority=5
+                    )
+                    def_results["audio_tasks"].append({"i": i, "task_id": audio_task.id})
             
-            if generate_images:
-                image_task = generate_definition_image_task.delay(
-                    defn.definition, uuid, defn.id, output_dir, word, i, image_model, image_size
-                )
-                def_results["image_tasks"].append({"i": i, "task_id": image_task.id})
+                if generate_images:
+                    image_task = generate_definition_image_task.apply_async(
+                        args=(defn.definition, uuid, defn.id, output_dir, word, i, image_model, image_size),
+                        priority=4
+                    )
+                    def_results["image_tasks"].append({"i": i, "task_id": image_task.id})
         
         results["definitions"].append(def_results)
     
