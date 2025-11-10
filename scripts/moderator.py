@@ -286,7 +286,7 @@ def delete_conceptual_images_endpoint():
     """Trigger async deletion of conceptual images (non-noun/verb)."""
     try:
         # Import Celery task
-        from celery_tasks import delete_conceptual_images
+        from scripts.celery_tasks import delete_conceptual_images
         
         # Get paths from config/env
         db_path = current_app.config.get("DATABASE_PATH") or os.getenv("DATABASE_PATH")

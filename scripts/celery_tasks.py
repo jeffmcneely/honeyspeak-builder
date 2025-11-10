@@ -715,15 +715,15 @@ def delete_conceptual_images(
                             errors.append(error_msg)
                 
                 # Delete from database (variant is combined with def_id in sid: sid = def_id * 100 + variant)
-                try:
-                    sid = def_id * 100 + variant
-                    db.delete_asset(uuid, 'image', sid)
-                    deleted_db_records += 1
-                    logger.debug(f"Deleted DB record: uuid={uuid}, assetgroup=image, sid={sid}")
-                except Exception as e:
-                    error_msg = f"Failed to delete DB record for {word} (uuid={uuid}, sid={sid}): {e}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
+                # try:
+                #     sid = def_id * 100 + variant
+                #     db.delete_asset(uuid, 'image', sid)
+                #     deleted_db_records += 1
+                #     logger.debug(f"Deleted DB record: uuid={uuid}, assetgroup=image, sid={sid}")
+                # except Exception as e:
+                #     error_msg = f"Failed to delete DB record for {word} (uuid={uuid}, sid={sid}): {e}"
+                #     logger.error(error_msg)
+                #     errors.append(error_msg)
             
             # Update progress
             if i % 100 == 0:
