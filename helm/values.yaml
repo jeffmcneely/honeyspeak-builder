@@ -18,8 +18,9 @@ env:
   ASSET_DIRECTORY: "/data/honeyspeak/assets_hires"
   PACKAGE_DIRECTORY: "/data/honeyspeak/assets"
   FLASK_SECRET_KEY: "supersecret"
-  CELERY_BROKER_URL: "redis://redis:6379/0"
+  CELERY_BROKER_URL: "amqp://guest:guest@rabbitmq:5672//"
   CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+  CELERY_BROKER_TRANSPORT_OPTIONS: '{"queue_arguments": {"x-max-priority": 5}}'
   DICTIONARY_API_KEY: ""
   OPENAI_API_KEY: ""
   # ComfyUI server endpoint (full URL). If set, the 'sdxl_turbo' image model
@@ -48,10 +49,6 @@ storage:
     hostPath:
       enabled: false
       path: ""  # e.g., "/mnt/comfyui/output"
-    nfs:
-      enabled: false
-      server: ""  # e.g., "stryker"
-      path: ""    # e.g., "/path/to/comfyui/output"
     smb:
       enabled: false
       server: ""
@@ -59,8 +56,16 @@ storage:
       username: ""
       password: ""
 
+rabbitmq:
+  enabled: true
+  image: "rabbitmq:4-management-alpine"
+  service:
+    port: 5672
+    managementPort: 15672
+
 redis:
-  image: "redis:7-alpine"
+  enabled: true
+  image: "redis:8-alpine"
   port: 6379
 
 celery:

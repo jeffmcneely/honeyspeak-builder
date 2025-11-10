@@ -190,7 +190,7 @@ def generate_definition_image(
             size = "1536x1024"
             aspect_words = "horizontal illustration (16:9 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
+            f"Create flat vector illustration of high-contrast {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     elif image_model == "dall-e-3":
@@ -201,14 +201,14 @@ def generate_definition_image(
             size = "1792x1024"
             aspect_words = "horizontal illustration (7:4 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
+            f"Create flat vector illustration of high-contrast {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     elif image_model == "sdxl_turbo":
         size = "512x768"
         aspect_words = "vertical illustration (9:16 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
+            f"Create flat vector illustration of high-contrast {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     
