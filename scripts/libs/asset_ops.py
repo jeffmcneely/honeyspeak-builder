@@ -190,7 +190,7 @@ def generate_definition_image(
             size = "1536x1024"
             aspect_words = "horizontal illustration (16:9 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     elif image_model == "dall-e-3":
@@ -201,14 +201,14 @@ def generate_definition_image(
             size = "1792x1024"
             aspect_words = "horizontal illustration (7:4 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     elif image_model == "sdxl_turbo":
         size = "512x768"
         aspect_words = "vertical illustration (9:16 aspect)"
         prompt = (
-            f"Create flat vector illustration of high-contrast educational {aspect_words} "
+            f"Create flat vector illustration of high-contrast educational {aspect_words} picture "
             f"that represents: {word}. {text}"
         )
     
@@ -219,8 +219,10 @@ def generate_definition_image(
         # Delegate the ComfyUI-specific behavior to the sdxl_turbo helper module
         try:
             from .sdxl_turbo import generate_image_via_comfy
+            safe_prompt = prompt.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
+            safe_word = word.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
 
-            return generate_image_via_comfy(word=word, text=prompt, output_path=fname)
+            return generate_image_via_comfy(word=safe_word, text=safe_prompt, output_path=fname)
         except Exception as e:
             logger.exception("sdxl_turbo helper failed: %s", e)
             return {"status": "error", "file": None, "error": str(e)}

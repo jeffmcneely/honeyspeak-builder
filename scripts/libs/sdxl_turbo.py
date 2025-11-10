@@ -122,8 +122,8 @@ def generate_image_via_comfy(
             # Some templates use numeric-string node keys like '6' and '13'.
             node6 = payload.get("6") if isinstance(payload, dict) else None
             if isinstance(node6, dict) and isinstance(node6.get("inputs"), dict):
-                existing = node6["inputs"].get("text", "")
-                payload["6"]["inputs"]["text"] = f"{safe_word}. {safe_text}. {existing}"
+#                existing = node6["inputs"].get("text", "")
+                payload["6"]["inputs"]["text"] = safe_text
 
             node13 = payload.get("13") if isinstance(payload, dict) else None
             if isinstance(node13, dict) and isinstance(node13.get("inputs"), dict):

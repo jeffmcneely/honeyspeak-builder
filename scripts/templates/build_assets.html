@@ -63,7 +63,7 @@
                             <label for="image_model" class="form-label">Image Model</label>
                             <select name="image_model" id="image_model" class="form-select">
                                 {% for m in image_models %}
-                                <option value="{{ m }}" {% if m == 'gpt-image-1' %}selected{% endif %}>{{ m }}</option>
+                                <option value="{{ m }}" {% if m == 'sdxl_turbo' %}selected{% endif %}>{{ m }}</option>
                                 {% endfor %}
                             </select>
                         </div>
