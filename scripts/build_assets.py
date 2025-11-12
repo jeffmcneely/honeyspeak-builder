@@ -262,7 +262,7 @@ def main():
     )
     parser.add_argument(
         "--audio_model",
-        default="gpt-4o-mini-tts",
+        default="comfy-tts",
         choices=TTS_MODELS,
         help="OpenAI TTS model to use",
     )

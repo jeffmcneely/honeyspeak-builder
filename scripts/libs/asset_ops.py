@@ -25,7 +25,7 @@ def generate_word_audio(
     word: str,
     uuid: str,
     output_dir: str,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy",
     api_key: Optional[str] = None
 ) -> Dict[str, str]:
@@ -56,6 +56,16 @@ def generate_word_audio(
     
     logger.info(f"Generating audio for {fname}: '{text}'")
     
+    # Special-case: send to ComfyUI server for the 'comfy-tts' model
+    if audio_model == "comfy-tts":
+        try:
+            from .comfy import generate_audio_via_comfy
+            safe_text = text.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
+            return generate_audio_via_comfy(word=text, text=safe_text, output_path=fname)
+        except Exception as e:
+            logger.exception("comfy-tts helper failed: %s", e)
+            return {"status": "error", "file": fname, "error": str(e)}
+    
     client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
     
     try:
@@ -84,7 +94,7 @@ def generate_definition_audio(
     def_id: int,
     output_dir: str,
     i: int = 0,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy",
     api_key: Optional[str] = None
 ) -> Dict[str, str]:
@@ -116,6 +126,16 @@ def generate_definition_audio(
         return {"status": "skipped", "file": fname, "reason": "text_too_short"}
     
     logger.info(f"Generating audio for {fname}: '{text[:50]}...'")
+    
+    # Special-case: send to ComfyUI server for the 'comfy-tts' model
+    if audio_model == "comfy-tts":
+        try:
+            from .comfy import generate_audio_via_comfy
+            safe_text = text.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
+            return generate_audio_via_comfy(word="", text=safe_text, output_path=fname)
+        except Exception as e:
+            logger.exception("comfy-tts helper failed: %s", e)
+            return {"status": "error", "file": fname, "error": str(e)}
     
     client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
     
@@ -218,7 +238,7 @@ def generate_definition_image(
     if image_model == "sdxl_turbo":
         # Delegate the ComfyUI-specific behavior to the sdxl_turbo helper module
         try:
-            from .sdxl_turbo import generate_image_via_comfy
+            from .comfy import generate_image_via_comfy
             safe_prompt = prompt.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
             safe_word = word.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
 

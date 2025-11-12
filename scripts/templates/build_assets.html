@@ -34,7 +34,7 @@
                             <label for="audio_model" class="form-label">Audio Model</label>
                             <select name="audio_model" id="audio_model" class="form-select">
                                 {% for m in tts_models %}
-                                <option value="{{ m }}" {% if m == 'gpt-4o-mini-tts' %}selected{% endif %}>{{ m }}</option>
+                                <option value="{{ m }}" {% if m == 'comfy-tts' %}selected{% endif %}>{{ m }}</option>
                                 {% endfor %}
                             </select>
                         </div>

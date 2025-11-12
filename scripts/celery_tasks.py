@@ -231,7 +231,7 @@ def generate_word_audio_task(
     word: str,
     uuid: str,
     output_dir: str,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy"
 ) -> Dict:
     """Generate audio for a word."""
@@ -261,7 +261,7 @@ def generate_definition_audio_task(
     def_id: int,
     output_dir: str,
     i: int = 0,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy"
 ) -> Dict:
     """Generate audio for a definition."""
@@ -331,7 +331,7 @@ def generate_assets_for_word(
     output_dir: str,
     generate_audio: bool = True,
     generate_images: bool = True,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy",
     image_model: str = "gpt-image-1",
     image_size: str = "vertical"
@@ -392,7 +392,7 @@ def generate_all_assets(
     output_dir: str,
     generate_audio: bool = True,
     generate_images: bool = True,
-    audio_model: str = "gpt-4o-mini-tts",
+    audio_model: str = "comfy-tts",
     audio_voice: str = "alloy",
     image_model: str = "gpt-image-1",
     image_size: str = "vertical",
@@ -476,20 +476,22 @@ def generate_all_assets(
             # Check definition assets
             for defn in definitions:
                 def_results = {"id": defn.id, "audio_tasks": [], "image_tasks": []}
-                
+
+                    # Check definition audio - 1 variant only
+                def_audio_file = f"shortdef_{uuid}_{defn.id}_0.aac"
+                if def_audio_file not in existing_files and generate_audio:
+                    audio_task = generate_definition_audio_task.delay(
+                        defn.definition, uuid, defn.id, output_dir, 0, audio_model, audio_voice
+                    )
+                    def_results["audio_tasks"].append({"i": 0, "task_id": audio_task.id, "status": "queued"})
+                    tasks_queued += 1
+                else:
+                    def_results["audio_tasks"].append({"i": 0, "status": "skipped", "reason": "exists"})
+                    tasks_skipped += 1
+
                 # Check 2 variants of each asset (i=0, i=1)
                 for variant_i in range(2):
-                    # Check definition audio
-                    def_audio_file = f"shortdef_{uuid}_{defn.id}_{variant_i}.aac"
-                    if def_audio_file not in existing_files and generate_audio:
-                        audio_task = generate_definition_audio_task.delay(
-                            defn.definition, uuid, defn.id, output_dir, variant_i, audio_model, audio_voice
-                        )
-                        def_results["audio_tasks"].append({"i": variant_i, "task_id": audio_task.id, "status": "queued"})
-                        tasks_queued += 1
-                    else:
-                        def_results["audio_tasks"].append({"i": variant_i, "status": "skipped", "reason": "exists"})
-                        tasks_skipped += 1
+
                     # Only generate images for nouns and verbs
                     if word.functional_label not in ["noun", "verb"]:
                         continue

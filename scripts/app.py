@@ -585,7 +585,7 @@ def build_dictionary_single():
 @app.route("/build_assets", methods=["GET", "POST"])
 def build_assets():
     # All options from build_assets.py
-    TTS_MODELS = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]
+    TTS_MODELS = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd", "comfy-tts"]
     VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"]
     IMAGE_MODELS = ["dall-e-2", "dall-e-3", "gpt-image-1", "sdxl_turbo"]
     IMAGE_SIZES = ["square", "vertical", "horizontal"]

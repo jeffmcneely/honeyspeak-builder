@@ -1,0 +1,29 @@
+{
+  "5": {
+    "inputs": {
+      "model_name": "./XTTS-v2",
+      "local_path": true,
+      "use_gpu": true
+    },
+    "class_type": "XTTSLoader",
+    "_meta": {
+      "title": "XTTS • Load Model"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "",
+      "speaker_wav": "/home/comfyui/ComfyUI/custom_nodes/XTTS-v2/samples/en_sample.wav",
+      "language": "en",
+      "filename_prefix": "xtts",
+      "tts_model": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "XTTSGenerateToFile",
+    "_meta": {
+      "title": "XTTS • Generate To File"
+    }
+  }
+}
