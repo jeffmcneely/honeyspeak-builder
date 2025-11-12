@@ -13,6 +13,7 @@ POSTGRES_SCHEMA = [
     # words: uuid is the PRIMARY KEY; index on word for faster lookups
     """CREATE TABLE IF NOT EXISTS words (
         word TEXT NOT NULL,
+        level TEXT,
         functional_label TEXT,
         uuid TEXT PRIMARY KEY,
         flags INTEGER DEFAULT 0

@@ -26,6 +26,7 @@ POSTGRES_TEST_SCHEMA = [
         test_id BIGINT NOT NULL REFERENCES test(id) ON DELETE CASCADE,
         prompt TEXT NOT NULL,
         explanation TEXT,
+        level TEXT DEFAULT 'a1',
         flags INTEGER DEFAULT 0,
         UNIQUE (test_id, prompt)
     )""",
@@ -56,6 +57,7 @@ class Question:
     test_id: int
     prompt: str
     explanation: Optional[str]
+    level: str
     flags: int
 
 
@@ -282,6 +284,7 @@ class PostgresTestDatabase:
         test_id: int,
         prompt: str,
         explanation: Optional[str] = None,
+        level: str = "a1",
         flags: int = 0
     ) -> int:
         """
@@ -291,6 +294,7 @@ class PostgresTestDatabase:
             test_id: Test ID
             prompt: Question prompt text
             explanation: Optional explanation
+            level: Question level (a1, a2, b1, b2, c1, c2)
             flags: Question flags
             
         Returns:
@@ -298,8 +302,8 @@ class PostgresTestDatabase:
         """
         with self.conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO question (test_id, prompt, explanation, flags) VALUES (%s, %s, %s, %s) RETURNING id",
-                (test_id, prompt, explanation, flags)
+                "INSERT INTO question (test_id, prompt, explanation, level, flags) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (test_id, prompt, explanation, level, flags)
             )
             question_id = cursor.fetchone()[0]
             self.conn.commit()
@@ -318,7 +322,7 @@ class PostgresTestDatabase:
         """
         with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
-                "SELECT id, test_id, prompt, explanation, flags FROM question WHERE id = %s",
+                "SELECT id, test_id, prompt, explanation, level, flags FROM question WHERE id = %s",
                 (question_id,)
             )
             row = cursor.fetchone()
@@ -338,7 +342,7 @@ class PostgresTestDatabase:
         """
         with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
-                "SELECT id, test_id, prompt, explanation, flags FROM question WHERE test_id = %s ORDER BY id",
+                "SELECT id, test_id, prompt, explanation, level, flags FROM question WHERE test_id = %s ORDER BY id",
                 (test_id,)
             )
             return [Question(**row) for row in cursor.fetchall()]

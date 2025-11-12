@@ -13,7 +13,20 @@
       <label for="question-prompt" class="form-label">Sentence (Question Prompt)</label>
       <textarea id="question-prompt" class="form-control" rows="2"></textarea>
     </div>
-    <button type="button" id="add-question" class="btn btn-primary mb-3">Add Question</button>
+    <div class="mb-3 d-flex gap-2 align-items-end">
+      <div>
+        <label for="level-select" class="form-label">Level</label>
+        <select id="level-select" class="form-select">
+          <option value="a1" selected>a1</option>
+          <option value="a2">a2</option>
+          <option value="b1">b1</option>
+          <option value="b2">b2</option>
+          <option value="c1">c1</option>
+          <option value="c2">c2</option>
+        </select>
+      </div>
+      <button type="button" id="add-question" class="btn btn-primary">Add Question</button>
+    </div>
   </form>
   <div id="question-status" class="mb-4"></div>
   <div class="row">
@@ -45,6 +58,7 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 let currentQuestionId = null;
+let currentQuestionLevel = 'a1';
 
 
 function loadTestNames() {
@@ -67,11 +81,13 @@ $(function() {
   $('#add-question').click(function() {
     const prompt = $('#question-prompt').val().trim();
     const testId = $('#test-name').val();
+    const level = $('#level-select').val();
     if (!prompt) return alert('Please enter a sentence.');
     if (!testId) return alert('Please select a test.');
-    $.post('/build_tests/add_question', { prompt, test_id: testId }, function(data) {
+    $.post('/build_tests/add_question', { prompt, test_id: testId, level }, function(data) {
       if (data.success) {
         currentQuestionId = data.question_id;
+        currentQuestionLevel = level;
         $('#question-status').html('<span class="text-success">Question added. Now select answers.</span>');
         $('#correct-answers-cloud, #incorrect-answers-cloud').empty();
       } else {
@@ -92,7 +108,7 @@ $(function() {
     $(this).removeClass('btn-outline-secondary').addClass('btn-primary');
     
     $(target).html('<em>Loading...</em>');
-    $.get('/build_tests/get_words', { label, count }, function(data) {
+    $.get('/build_tests/get_words', { label, count, level: currentQuestionLevel }, function(data) {
       if (data.success) {
         let html = '';
         data.words.forEach(word => {

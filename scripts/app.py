@@ -116,13 +116,14 @@ def build_tests_get_tests():
 def build_tests_add_question():
     prompt = request.form.get("prompt", "").strip()
     test_id = request.form.get("test_id")
+    level = request.form.get("level", "a1").strip().lower()
     if not prompt:
         return jsonify(success=False, error="No prompt provided.")
     if not test_id:
         return jsonify(success=False, error="No test selected.")
     try:
         with PostgresTestDatabase() as testdb:
-            qid = testdb.create_question(int(test_id), prompt)
+            qid = testdb.create_question(int(test_id), prompt, level=level)
         return jsonify(success=True, question_id=qid)
     except Exception as e:
         return jsonify(success=False, error=str(e))
@@ -131,31 +132,56 @@ def build_tests_add_question():
 def build_tests_get_words():
     label = request.args.get("label", "")
     count = int(request.args.get("count", 100))
+    level = request.args.get("level", "").strip().lower()
     try:
         db = PostgresDictionary()
         if label == "proper noun":
             # function_label == 'noun' and first letter capitalized (uppercase), flags == 0
-            rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
-                (count,)
-            )
+            if level:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' AND flags = 0 AND level = %s ORDER BY random() LIMIT %s",
+                    (level, count)
+                )
+            else:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[A-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
+                    (count,)
+                )
         elif label == "noun":
             # function_label == 'noun' and first letter lowercase, starts with a letter, flags == 0
-            rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' AND flags = 0 ORDER BY random() LIMIT %s",
-                (count,)
-            )
+            if level:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' AND flags = 0 AND level = %s ORDER BY random() LIMIT %s",
+                    (level, count)
+                )
+            else:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = 'noun' AND word ~ '^[a-z]' AND flags = 0 ORDER BY random() LIMIT %s",
+                    (count,)
+                )
         elif label in ["verb", "adjective", "adverb"]:
             # Exclude words that do not start with a letter, flags == 0
-            rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
-                (label, count)
-            )
+            if level:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' AND flags = 0 AND level = %s ORDER BY random() LIMIT %s",
+                    (label, level, count)
+                )
+            else:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = %s AND word ~ '^[a-zA-Z]' AND flags = 0 ORDER BY random() LIMIT %s",
+                    (label, count)
+                )
         else:
-            rows = db.execute_fetchall(
-                "SELECT word FROM words WHERE functional_label = %s AND flags = 0 ORDER BY random() LIMIT %s",
-                (label, count)
-            )
+            if level:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = %s AND flags = 0 AND level = %s ORDER BY random() LIMIT %s",
+                    (label, level, count)
+                )
+            else:
+                rows = db.execute_fetchall(
+                    "SELECT word FROM words WHERE functional_label = %s AND flags = 0 ORDER BY random() LIMIT %s",
+                    (label, count)
+                )
         words = [r["word"] for r in rows]
         return jsonify(success=True, words=words)
     except Exception as e:

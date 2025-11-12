@@ -66,6 +66,7 @@ SQLITE_SCHEMA = [
     """CREATE TABLE question (
         id        INTEGER PRIMARY KEY,
         test_id   INTEGER NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+        level    TEXT,
         prompt    TEXT    NOT NULL,
         explanation TEXT,
         flags     INTEGER DEFAULT 0,
