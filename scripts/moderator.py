@@ -322,6 +322,12 @@ def index():
     return render_template("moderator.html")
 
 
+@moderator_bp.route("/migration")
+def migration():
+    """Migration tools page for file reorganization."""
+    return render_template("migration.html")
+
+
 @moderator_bp.route("/api/definitions")
 def get_definitions():
     """API endpoint to get definitions with images via AJAX.
@@ -373,6 +379,28 @@ def delete_conceptual_images_endpoint():
             "ok": True,
             "task_id": task.id,
             "message": "Deletion task queued"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@moderator_bp.route("/api/relocate-files", methods=["POST"])
+def relocate_files_endpoint():
+    """Trigger async file relocation task."""
+    try:
+        # Import Celery task
+        from scripts.celery_tasks import relocate_files as relocate_files_task
+        
+        # Get asset directory from config/env
+        asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
+        
+        # Queue the task
+        task = relocate_files_task.delay(asset_dir)
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "message": "File relocation task queued"
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

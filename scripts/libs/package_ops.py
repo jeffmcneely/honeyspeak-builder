@@ -25,6 +25,10 @@ def encode_audio_file(
     """
     Encode audio file to low-bitrate mono AAC using ffmpeg.
     
+    Checks for audio files in two locations:
+    1. output_dir/audio/{input_file} (new organized structure)
+    2. output_dir/{input_file} (legacy location)
+    
     Args:
         input_file: Path to input audio file
         output_dir: Directory containing files
@@ -33,14 +37,23 @@ def encode_audio_file(
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    raw_path = os.path.join(output_dir, input_file)
+    # Try new audio/ subdirectory first
+    raw_path_new = os.path.join(output_dir, "audio", input_file)
+    raw_path_legacy = os.path.join(output_dir, input_file)
     base_name = os.path.splitext(input_file)[0]
     low_path = os.path.join(output_dir, f"low_{base_name}.aac")
     
-    logger.info(f"[encode_audio] Input: {raw_path}, Output: {low_path}")
-    
-    if not os.path.exists(raw_path):
-        logger.warning(f"[encode_audio] Input file not found: {raw_path}")
+    # Determine which path exists
+    if os.path.exists(raw_path_new):
+        raw_path = raw_path_new
+        logger.info(f"[encode_audio] Found audio file in audio/: {raw_path}")
+    elif os.path.exists(raw_path_legacy):
+        raw_path = raw_path_legacy
+        logger.info(f"[encode_audio] Found audio file in root: {raw_path}")
+    else:
+        logger.warning(f"[encode_audio] Input file not found. Tried:")
+        logger.warning(f"  - {raw_path_new}")
+        logger.warning(f"  - {raw_path_legacy}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
     if os.path.exists(low_path):
@@ -77,6 +90,10 @@ def encode_image_file(
     """
     Reduce image resolution and convert to HEIF using ImageMagick.
     
+    Checks for image files in two locations:
+    1. output_dir/image/{input_file} (new organized structure)
+    2. output_dir/{input_file} (legacy location)
+    
     Args:
         input_file: Path to input image file
         output_dir: Directory containing files
@@ -85,14 +102,23 @@ def encode_image_file(
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    raw_path = os.path.join(output_dir, input_file)
+    # Try new image/ subdirectory first
+    raw_path_new = os.path.join(output_dir, "image", input_file)
+    raw_path_legacy = os.path.join(output_dir, input_file)
     base_name = os.path.splitext(input_file)[0]
     low_path = os.path.join(output_dir, f"low_{base_name}.heif")
     
-    logger.info(f"[encode_image] Input: {raw_path}, Output: {low_path}")
-    
-    if not os.path.exists(raw_path):
-        logger.warning(f"[encode_image] Input file not found: {raw_path}")
+    # Determine which path exists
+    if os.path.exists(raw_path_new):
+        raw_path = raw_path_new
+        logger.info(f"[encode_image] Found image file in image/: {raw_path}")
+    elif os.path.exists(raw_path_legacy):
+        raw_path = raw_path_legacy
+        logger.info(f"[encode_image] Found image file in root: {raw_path}")
+    else:
+        logger.warning(f"[encode_image] Input file not found. Tried:")
+        logger.warning(f"  - {raw_path_new}")
+        logger.warning(f"  - {raw_path_legacy}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
     if os.path.exists(low_path):

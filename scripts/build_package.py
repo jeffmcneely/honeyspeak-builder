@@ -20,14 +20,30 @@ load_dotenv()  # Load .env file if present
 
 
 def encode_audio(file: str, bitrate) -> str | None:
-    """Encode to low-bitrate mono mp3 using ffmpeg"""
-
-    raw_path = os.path.join(OUTDIR, f"{file}")
+    """Encode to low-bitrate mono mp3 using ffmpeg
+    
+    Checks for audio files in two locations:
+    1. OUTDIR/audio/{file} (new organized structure)
+    2. OUTDIR/{file} (legacy location)
+    """
+    # Try new audio/ subdirectory first
+    raw_path_new = os.path.join(OUTDIR, "audio", f"{file}")
+    raw_path_legacy = os.path.join(OUTDIR, f"{file}")
     low_path = os.path.join(OUTDIR, f"low_{file}")
-    print(f"[encode_audio] Looking for raw file: {raw_path}")
-    if not os.path.exists(raw_path):
-        print(f"[encode_audio] Raw file NOT FOUND: {raw_path}")
+    
+    # Determine which path exists
+    if os.path.exists(raw_path_new):
+        raw_path = raw_path_new
+        print(f"[encode_audio] Found audio file in audio/: {raw_path}")
+    elif os.path.exists(raw_path_legacy):
+        raw_path = raw_path_legacy
+        print(f"[encode_audio] Found audio file in root: {raw_path}")
+    else:
+        print(f"[encode_audio] Raw file NOT FOUND. Tried:")
+        print(f"  - {raw_path_new}")
+        print(f"  - {raw_path_legacy}")
         return None
+    
     if os.path.exists(low_path):
         print(f"[encode_audio] Low file already exists: {low_path}")
         return low_path
@@ -79,14 +95,29 @@ def encode_audio(file: str, bitrate) -> str | None:
 
 
 def encode_image(file: str) -> str | None:
-    """Reduce image resolution by half using ImageMagick"""
-    raw_path = os.path.join(OUTDIR, f"{file}")
+    """Reduce image resolution by half using ImageMagick
+    
+    Checks for image files in two locations:
+    1. OUTDIR/image/{file} (new organized structure)
+    2. OUTDIR/{file} (legacy location)
+    """
+    # Try new image/ subdirectory first
+    raw_path_new = os.path.join(OUTDIR, "image", f"{file}")
+    raw_path_legacy = os.path.join(OUTDIR, f"{file}")
     base_name = os.path.splitext(file)[0]
     low_path = os.path.join(OUTDIR, f"low_{base_name}.heif")
-    print(f"[encode_image] Looking for raw file: {raw_path}")
-
-    if not os.path.exists(raw_path):
-        print(f"[encode_image] Raw file NOT FOUND: {raw_path}")
+    
+    # Determine which path exists
+    if os.path.exists(raw_path_new):
+        raw_path = raw_path_new
+        print(f"[encode_image] Found image file in image/: {raw_path}")
+    elif os.path.exists(raw_path_legacy):
+        raw_path = raw_path_legacy
+        print(f"[encode_image] Found image file in root: {raw_path}")
+    else:
+        print(f"[encode_image] Raw file NOT FOUND. Tried:")
+        print(f"  - {raw_path_new}")
+        print(f"  - {raw_path_legacy}")
         return None
 
     if os.path.exists(low_path):
@@ -311,7 +342,7 @@ def main():
                             )
                 if args.verbosity == 2:
                     print(
-                        f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id * 100 + i} package_id: {package_id} filename: {filename}"
+                        f"add_asset uuid:{word.uuid} assetgroup: image sid: {definition.id * 100 + variant} package_id: {package_id} filename: {filename}"
                     )
 
     db.close()

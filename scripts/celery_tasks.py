@@ -465,7 +465,7 @@ def generate_all_assets(
             word_audio_file = f"word_{uuid}_0.aac"
             if word_audio_file not in existing_files and generate_audio:
                 audio_task = generate_word_audio_task.delay(
-                    word.word, uuid, output_dir, audio_model, audio_voice
+                    word.word, uuid, os.path.join(output_dir,"audio"), audio_model, audio_voice
                 )
                 word_result["word_audio"] = {"task_id": audio_task.id, "status": "queued"}
                 tasks_queued += 1
@@ -481,7 +481,7 @@ def generate_all_assets(
                 def_audio_file = f"shortdef_{uuid}_{defn.id}_0.aac"
                 if def_audio_file not in existing_files and generate_audio:
                     audio_task = generate_definition_audio_task.delay(
-                        defn.definition, uuid, defn.id, output_dir, 0, audio_model, audio_voice
+                        defn.definition, uuid, defn.id, os.path.join(output_dir,"audio"), 0, audio_model, audio_voice
                     )
                     def_results["audio_tasks"].append({"i": 0, "task_id": audio_task.id, "status": "queued"})
                     tasks_queued += 1
@@ -499,7 +499,7 @@ def generate_all_assets(
                     def_image_file = f"image_{uuid}_{defn.id}_{variant_i}.png"
                     if def_image_file not in existing_files and generate_images:
                         image_task = generate_definition_image_task.delay(
-                            defn.definition, uuid, defn.id, output_dir, word.word, variant_i, image_model, image_size
+                            defn.definition, uuid, defn.id, os.path.join(output_dir,"image"), word.word, variant_i, image_model, image_size
                         )
                         def_results["image_tasks"].append({"i": variant_i, "task_id": image_task.id, "status": "queued"})
                         tasks_queued += 1
@@ -634,6 +634,100 @@ def encode_and_package_image(
         "package_id": package_id,
         "filename": filename
     }
+
+
+@app.task(base=LoggingTask, bind=True)
+def relocate_files(
+    self,
+    asset_dir: str
+) -> Dict:
+    """
+    Relocate files in asset directory into organized subdirectories.
+    
+    Creates subdirectories: image/, audio/, temp/
+    Moves image_* files to image/
+    Moves *.aac files to audio/
+    Deletes low_* files
+    
+    Args:
+        asset_dir: Path to asset directory
+    
+    Returns:
+        Dict with counts of files moved/deleted
+    """
+    logger.info(f"Starting file relocation in: {asset_dir}")
+    
+    try:
+        asset_path = Path(asset_dir)
+        if not asset_path.exists():
+            error_msg = f"Asset directory does not exist: {asset_dir}"
+            logger.error(error_msg)
+            return {"status": "error", "error": error_msg}
+        
+        # Create subdirectories
+        image_dir = asset_path / "image"
+        audio_dir = asset_path / "audio"
+        temp_dir = asset_path / "temp"
+        
+        image_dir.mkdir(exist_ok=True)
+        audio_dir.mkdir(exist_ok=True)
+        temp_dir.mkdir(exist_ok=True)
+        
+        logger.info("Created subdirectories: image/, audio/, temp/")
+        
+        images_moved = 0
+        audio_moved = 0
+        low_deleted = 0
+        
+        # Process files in the asset directory (not subdirectories)
+        for item in asset_path.iterdir():
+            if not item.is_file():
+                continue
+            
+            filename = item.name
+            
+            # Delete low_* files
+            if filename.startswith("low_"):
+                item.unlink()
+                low_deleted += 1
+                logger.debug(f"Deleted: {filename}")
+                continue
+            
+            # Move image_* files to image/
+            if filename.startswith("image_"):
+                target = image_dir / filename
+                if not target.exists():  # Don't overwrite existing files
+                    item.rename(target)
+                    images_moved += 1
+                    logger.debug(f"Moved to image/: {filename}")
+                continue
+            
+            # Move *.aac files to audio/
+            if filename.endswith(".aac"):
+                target = audio_dir / filename
+                if not target.exists():  # Don't overwrite existing files
+                    item.rename(target)
+                    audio_moved += 1
+                    logger.debug(f"Moved to audio/: {filename}")
+                continue
+        
+        logger.info(f"Relocation complete: {images_moved} images, {audio_moved} audio, {low_deleted} low_* files deleted")
+        
+        return {
+            "status": "success",
+            "images_moved": images_moved,
+            "audio_moved": audio_moved,
+            "low_deleted": low_deleted
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in relocate_files: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 @app.task(base=LoggingTask, bind=True)

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Migration Tools - Honeyspeak Builder{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h1>🔄 Migration Tools</h1>
+  <p class="lead">Tools for reorganizing and cleaning up asset files.</p>
+  
+  <div class="row mt-4">
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">📁 Relocate Files</h5>
+          <p class="card-text">
+            Reorganize assets_hires directory by moving files into subdirectories:
+          </p>
+          <ul>
+            <li><strong>image/</strong> - All image_* files</li>
+            <li><strong>audio/</strong> - All *.aac audio files</li>
+            <li><strong>temp/</strong> - Temporary workspace</li>
+          </ul>
+          <p class="text-muted">Also deletes all low_* files.</p>
+          <button id="relocateFilesBtn" class="btn btn-primary">
+            <span class="spinner-border spinner-border-sm d-none" role="status" id="relocateSpinner"></span>
+            Relocate Files
+          </button>
+          <div id="relocateResult" class="mt-3"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">🗑️ Delete Conceptual Images</h5>
+          <p class="card-text">
+            Remove all image assets for non-noun/verb words (adjectives, adverbs, etc.).
+            Conceptual words should not have visual representations.
+          </p>
+          <p class="text-warning"><strong>⚠️ This action cannot be undone.</strong></p>
+          <button id="deleteConceptualImagesBtn" class="btn btn-danger">
+            <span class="spinner-border spinner-border-sm d-none" role="status" id="deleteSpinner"></span>
+            Delete Conceptual Images
+          </button>
+          <div id="deleteResult" class="mt-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+$(document).ready(function() {
+  // Relocate Files handler
+  $('#relocateFilesBtn').on('click', function(e) {
+    e.preventDefault();
+    
+    if (!confirm('Relocate files in assets_hires?\n\nThis will:\n- Move image_* to image/\n- Move *.aac to audio/\n- Delete low_* files\n- Create temp/ directory\n\nContinue?')) {
+      return;
+    }
+    
+    const $btn = $(this);
+    const $spinner = $('#relocateSpinner');
+    const $result = $('#relocateResult');
+    
+    // Disable button and show spinner
+    $btn.prop('disabled', true);
+    $spinner.removeClass('d-none');
+    $result.html('');
+    
+    $.ajax({
+      url: '/moderator/api/relocate-files',
+      method: 'POST',
+      success: function(response) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        if (response.ok) {
+          $result.html(`
+            <div class="alert alert-success">
+              <strong>Success!</strong> Files relocated.
+              <ul class="mb-0 mt-2">
+                <li>Images moved: ${response.images_moved}</li>
+                <li>Audio moved: ${response.audio_moved}</li>
+                <li>Low files deleted: ${response.low_deleted}</li>
+              </ul>
+            </div>
+          `);
+        } else {
+          $result.html(`
+            <div class="alert alert-danger">
+              <strong>Error:</strong> ${response.error || 'Unknown error'}
+            </div>
+          `);
+        }
+      },
+      error: function(xhr) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        let errorMsg = 'Request failed';
+        try {
+          const response = JSON.parse(xhr.responseText);
+          errorMsg = response.error || errorMsg;
+        } catch (e) {}
+        
+        $result.html(`
+          <div class="alert alert-danger">
+            <strong>Error:</strong> ${errorMsg}
+          </div>
+        `);
+      }
+    });
+  });
+  
+  // Delete Conceptual Images handler
+  $('#deleteConceptualImagesBtn').on('click', function(e) {
+    e.preventDefault();
+    
+    if (!confirm('Delete all image assets for non-noun/verb words?\n\nThis will remove images for adjectives, adverbs, and other conceptual words.\n\n⚠️ This action cannot be undone.\n\nContinue?')) {
+      return;
+    }
+    
+    const $btn = $(this);
+    const $spinner = $('#deleteSpinner');
+    const $result = $('#deleteResult');
+    
+    // Disable button and show spinner
+    $btn.prop('disabled', true);
+    $spinner.removeClass('d-none');
+    $result.html('');
+    
+    $.ajax({
+      url: '/moderator/api/delete-conceptual-images',
+      method: 'POST',
+      success: function(response) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        if (response.ok) {
+          $result.html(`
+            <div class="alert alert-success">
+              <strong>Task Started!</strong><br>
+              Task ID: <code>${response.task_id}</code><br>
+              <small>Check <a href="/celery_status">Celery Status</a> for progress.</small>
+            </div>
+          `);
+        } else {
+          $result.html(`
+            <div class="alert alert-danger">
+              <strong>Error:</strong> ${response.error || 'Unknown error'}
+            </div>
+          `);
+        }
+      },
+      error: function(xhr) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        let errorMsg = 'Request failed';
+        try {
+          const response = JSON.parse(xhr.responseText);
+          errorMsg = response.error || errorMsg;
+        } catch (e) {}
+        
+        $result.html(`
+          <div class="alert alert-danger">
+            <strong>Error:</strong> ${errorMsg}
+          </div>
+        `);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

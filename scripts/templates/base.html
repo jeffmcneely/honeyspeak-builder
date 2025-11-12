@@ -48,7 +48,7 @@
             <a class="nav-link" href="/moderator">🛡️ Moderator</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="#" id="deleteConceptualImagesLink">🗑️ Delete Conceptual Images</a>
+            <a class="nav-link" href="/moderator/migration">� Migration</a>
           </li>
         </ul>
       </div>
@@ -72,43 +72,6 @@
 
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    // Delete Conceptual Images handler
-    $(document).ready(function() {
-      $('#deleteConceptualImagesLink').on('click', function(e) {
-        e.preventDefault();
-        if (!confirm('Delete all image assets for non-noun/verb words?\n\nThis will remove images for adjectives, adverbs, and other conceptual words that should not have visual representations.\n\nThis action cannot be undone.')) {
-          return;
-        }
-        
-        // Disable the link to prevent double-clicks
-        $(this).addClass('disabled').text('🗑️ Deleting...');
-        
-        $.ajax({
-          url: '/moderator/api/delete-conceptual-images',
-          method: 'POST',
-          success: function(response) {
-            if (response.ok) {
-              alert('Deletion task started!\n\nTask ID: ' + response.task_id + '\n\nCheck Celery Status for progress.');
-              $('#deleteConceptualImagesLink').removeClass('disabled').text('🗑️ Delete Conceptual Images');
-            } else {
-              alert('Error: ' + (response.error || 'Unknown error'));
-              $('#deleteConceptualImagesLink').removeClass('disabled').text('🗑️ Delete Conceptual Images');
-            }
-          },
-          error: function(xhr) {
-            var errorMsg = 'Request failed';
-            try {
-              var response = JSON.parse(xhr.responseText);
-              errorMsg = response.error || errorMsg;
-            } catch (e) {}
-            alert('Error: ' + errorMsg);
-            $('#deleteConceptualImagesLink').removeClass('disabled').text('🗑️ Delete Conceptual Images');
-          }
-        });
-      });
-    });
-  </script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>
