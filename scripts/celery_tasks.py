@@ -537,44 +537,55 @@ def package_asset_group(
     self,
     letter: str,
     asset_dir: str,
-    package_dir: str
+    package_dir: str,
+    db_path: str
 ) -> Dict:
     """
     Package all assets for a specific letter group (a-f, 0-9).
-    Finds all files matching the pattern and encodes/packages them.
+    Finds hires files matching the letter pattern, encodes them, and packages them.
     Does NOT write to external_assets table - that table is deprecated.
     
     Args:
-        letter: Single character (a-f, 0-9) to filter files
+        letter: Single character (a-f, 0-9) to filter files by UUID first letter
         asset_dir: Directory containing hires assets (expects audio/ and image/ subdirs)
         package_dir: Directory for output package files
+        db_path: Path to database (passed to encoding functions)
     
     Returns:
         Dict with packaging results
     """
     import glob
+    import re
     
     logger.info(f"Starting asset packaging for letter group: {letter}")
     
     # Create package directory if needed
     os.makedirs(package_dir, exist_ok=True)
     
-    # Collect all files to process from temp/{letter}/{assetgroup}/
-    temp_audio_dir = os.path.join(asset_dir, "temp", letter, "audio")
-    temp_image_dir = os.path.join(asset_dir, "temp", letter, "image")
+    # Collect all hires files that match the letter pattern from audio/ and image/
+    hires_audio_dir = os.path.join(asset_dir, "audio")
+    hires_image_dir = os.path.join(asset_dir, "image")
     
     files_to_process = []
     
-    # Find audio files in temp/{letter}/audio/
-    if os.path.exists(temp_audio_dir):
-        word_files = glob.glob(os.path.join(temp_audio_dir, "word_*.aac"))
-        shortdef_files = glob.glob(os.path.join(temp_audio_dir, "shortdef_*.aac"))
+    # Find audio files in audio/ that start with letter
+    if os.path.exists(hires_audio_dir):
+        # Pattern: word_{uuid}_0.aac where uuid starts with letter
+        word_pattern = os.path.join(hires_audio_dir, f"word_{letter}*.aac")
+        word_files = glob.glob(word_pattern)
+        
+        # Pattern: shortdef_{uuid}_{def_id}_{variant}.aac where uuid starts with letter
+        shortdef_pattern = os.path.join(hires_audio_dir, f"shortdef_{letter}*.aac")
+        shortdef_files = glob.glob(shortdef_pattern)
+        
         files_to_process.extend([("audio", f) for f in word_files + shortdef_files])
         logger.info(f"Found {len(word_files)} word audio files, {len(shortdef_files)} shortdef audio files")
     
-    # Find image files in temp/{letter}/image/
-    if os.path.exists(temp_image_dir):
-        image_files = glob.glob(os.path.join(temp_image_dir, "image_*.heif"))
+    # Find image files in image/ that start with letter
+    if os.path.exists(hires_image_dir):
+        # Pattern: image_{uuid}_{def_id}_{variant}.png where uuid starts with letter
+        image_pattern = os.path.join(hires_image_dir, f"image_{letter}*.png")
+        image_files = glob.glob(image_pattern)
         files_to_process.extend([("image", f) for f in image_files])
         logger.info(f"Found {len(image_files)} image files")
     
@@ -592,31 +603,95 @@ def package_asset_group(
         "files_skipped": 0
     }
     
+    # Temp output directory for encoded files
+    temp_output_dir = os.path.join(asset_dir, "temp")
+    
     for i, (asset_type, filepath) in enumerate(files_to_process):
         filename = os.path.basename(filepath)
         
-        # Files are already encoded in temp directory, just package them
-        logger.debug(f"Packaging file: {filepath}")
+        # Parse filename to extract uuid and other metadata
+        # Patterns: word_{uuid}_0.aac, shortdef_{uuid}_{def_id}_{variant}.aac, image_{uuid}_{def_id}_{variant}.png
         
-        # Add to package
-        package_id = add_file_to_package(filepath, package_dir)
-        
-        if package_id:
-            results["files_packaged"] += 1
-            if asset_type == "audio":
-                results["audio_encoded"] += 1
+        if asset_type == "audio":
+            if filename.startswith("word_"):
+                # word_{uuid}_0.aac
+                match = re.match(r"word_([a-f0-9-]+)_0\.aac", filename)
+                if match:
+                    uuid = match.group(1)
+                    assetgroup = "word"
+                    defn_id = 0
+                    variant = 0
+                else:
+                    logger.warning(f"Failed to parse word audio filename: {filename}")
+                    results["audio_failed"] += 1
+                    continue
             else:
-                results["images_encoded"] += 1
-            logger.debug(f"Packaged {filename} -> {package_id}")
-        else:
-            if asset_type == "audio":
+                # shortdef_{uuid}_{def_id}_{variant}.aac
+                match = re.match(r"shortdef_([a-f0-9-]+)_(\d+)_(\d+)\.aac", filename)
+                if match:
+                    uuid = match.group(1)
+                    assetgroup = "shortdef"
+                    defn_id = int(match.group(2))
+                    variant = int(match.group(3))
+                else:
+                    logger.warning(f"Failed to parse shortdef audio filename: {filename}")
+                    results["audio_failed"] += 1
+                    continue
+            
+            # Call encode_and_package_audio
+            logger.debug(f"Encoding audio: {filepath}")
+            result = encode_and_package_audio(
+                input_file=filepath,
+                output_dir=temp_output_dir,
+                package_dir=package_dir,
+                db_path=db_path,
+                uuid=uuid,
+                assetgroup=assetgroup,
+                defn_id=defn_id,
+                variant=variant
+            )
+            
+            if result["status"] == "success":
+                results["audio_encoded"] += 1
+                results["files_packaged"] += 1
+                logger.debug(f"Encoded and packaged {filename}")
+            else:
                 results["audio_failed"] += 1
+                logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'unknown')}")
+        
+        elif asset_type == "image":
+            # image_{uuid}_{def_id}_{variant}.png
+            match = re.match(r"image_([a-f0-9-]+)_(\d+)_(\d+)\.png", filename)
+            if match:
+                uuid = match.group(1)
+                assetgroup = "image"
+                defn_id = int(match.group(2))
+                variant = int(match.group(3))
+            else:
+                logger.warning(f"Failed to parse image filename: {filename}")
+                results["images_failed"] += 1
+                continue
+            
+            # Call encode_and_package_image
+            logger.debug(f"Encoding image: {filepath}")
+            result = encode_and_package_image(
+                input_file=filepath,
+                output_dir=temp_output_dir,
+                package_dir=package_dir,
+                db_path=db_path,
+                uuid=uuid,
+                assetgroup=assetgroup,
+                defn_id=defn_id,
+                variant=variant
+            )
+            
+            if result["status"] == "success":
+                results["images_encoded"] += 1
+                results["files_packaged"] += 1
+                logger.debug(f"Encoded and packaged {filename}")
             else:
                 results["images_failed"] += 1
-            logger.warning(f"Failed to package {filename}")
-            if package_id:
-                results["files_packaged"] += 1
-                logger.warning(f"Failed to package {filename}")
+                logger.warning(f"Failed to encode image {filename}: {result.get('error', 'unknown')}")
         
         # Update progress
         if i % 50 == 0:
@@ -656,6 +731,7 @@ def encode_and_package_audio(
     Does NOT store metadata - caller is responsible for batching metadata storage.
     
     Args:
+        output_dir: Base temp directory (will create subdirs by UUID first letter)
         defn_id: Definition ID (0 for word audio)
         variant: Variant number (0 or 1)
     
@@ -665,21 +741,39 @@ def encode_and_package_audio(
     # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
     sid = defn_id * 100 + variant
     
-    logger.info(f"Encoding and packaging audio: {input_file} (sid={sid})")
+    logger.debug(f"[encode_and_package_audio] Starting for: {input_file}")
+    logger.debug(f"[encode_and_package_audio] uuid={uuid}, assetgroup={assetgroup}, defn_id={defn_id}, variant={variant}, sid={sid}")
+    logger.debug(f"[encode_and_package_audio] output_dir={output_dir}")
+    logger.debug(f"[encode_and_package_audio] package_dir={package_dir}")
+    logger.debug(f"[encode_and_package_audio] input_file exists: {os.path.exists(input_file)}")
     
-    # Encode
+    # Create output directory: temp/{first_letter_of_uuid}/audio/
+    first_letter = uuid[0] if uuid else "0"
+    specific_output_dir = os.path.join(output_dir, first_letter, "audio")
+    os.makedirs(specific_output_dir, exist_ok=True)
+    logger.debug(f"[encode_and_package_audio] specific_output_dir={specific_output_dir}")
+    
+    # Encode - pass the full input path and the base output directory
+    logger.debug(f"[encode_and_package_audio] Calling encode_audio_file with input_file={input_file}, output_dir={output_dir}")
     encode_result = encode_audio_file(input_file, output_dir, bitrate)
+    logger.debug(f"[encode_and_package_audio] encode_result={encode_result}")
+    
     if encode_result["status"] != "success":
+        logger.warning(f"[encode_and_package_audio] Encoding failed: {encode_result}")
         return encode_result
     
     # Package
+    logger.debug(f"[encode_and_package_audio] Calling add_file_to_package with file={encode_result['output_file']}")
     package_id = add_file_to_package(encode_result["output_file"], package_dir)
+    logger.debug(f"[encode_and_package_audio] package_id={package_id}")
+    
     if not package_id:
+        logger.error(f"[encode_and_package_audio] Failed to add to package")
         return {"status": "error", "error": "Failed to add to package"}
     
     # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    logger.info(f"Audio packaged: {filename} -> {package_id}")
+    logger.debug(f"[encode_and_package_audio] Success: {filename} -> {package_id}")
     
     return {
         "status": "success",
@@ -708,6 +802,7 @@ def encode_and_package_image(
     Does NOT store metadata - caller is responsible for batching metadata storage.
     
     Args:
+        output_dir: Base temp directory (will create subdirs by UUID first letter)
         defn_id: Definition ID (0 for word images)
         variant: Variant number (0 or 1)
     
@@ -717,21 +812,39 @@ def encode_and_package_image(
     # Compute sid from defn_id and variant: sid = defn_id * 100 + variant
     sid = defn_id * 100 + variant
     
-    logger.info(f"Encoding and packaging image: {input_file} (sid={sid})")
+    logger.debug(f"[encode_and_package_image] Starting for: {input_file}")
+    logger.debug(f"[encode_and_package_image] uuid={uuid}, assetgroup={assetgroup}, defn_id={defn_id}, variant={variant}, sid={sid}")
+    logger.debug(f"[encode_and_package_image] output_dir={output_dir}")
+    logger.debug(f"[encode_and_package_image] package_dir={package_dir}")
+    logger.debug(f"[encode_and_package_image] input_file exists: {os.path.exists(input_file)}")
     
-    # Encode
+    # Create output directory: temp/{first_letter_of_uuid}/image/
+    first_letter = uuid[0] if uuid else "0"
+    specific_output_dir = os.path.join(output_dir, first_letter, "image")
+    os.makedirs(specific_output_dir, exist_ok=True)
+    logger.debug(f"[encode_and_package_image] specific_output_dir={specific_output_dir}")
+    
+    # Encode - pass the full input path and the base output directory
+    logger.debug(f"[encode_and_package_image] Calling encode_image_file with input_file={input_file}, output_dir={output_dir}")
     encode_result = encode_image_file(input_file, output_dir, quality)
+    logger.debug(f"[encode_and_package_image] encode_result={encode_result}")
+    
     if encode_result["status"] != "success":
+        logger.warning(f"[encode_and_package_image] Encoding failed: {encode_result}")
         return encode_result
     
     # Package
+    logger.debug(f"[encode_and_package_image] Calling add_file_to_package with file={encode_result['output_file']}")
     package_id = add_file_to_package(encode_result["output_file"], package_dir)
+    logger.debug(f"[encode_and_package_image] package_id={package_id}")
+    
     if not package_id:
+        logger.error(f"[encode_and_package_image] Failed to add to package")
         return {"status": "error", "error": "Failed to add to package"}
     
     # Return package info (don't store metadata - caller will batch it)
     filename = os.path.basename(encode_result["output_file"])
-    logger.info(f"Image packaged: {filename} -> {package_id}")
+    logger.debug(f"[encode_and_package_image] Success: {filename} -> {package_id}")
     
     return {
         "status": "success",
@@ -1000,7 +1113,7 @@ def package_all_assets(
     logger.info(f"Launching {len(letter_groups)} parallel packaging tasks")
     
     for letter in letter_groups:
-        task = package_asset_group.delay(letter, asset_dir, package_dir)
+        task = package_asset_group.delay(letter, asset_dir, package_dir, db_path)
         tasks[letter] = task.id
         logger.info(f"Launched task for letter '{letter}': {task.id}")
     
@@ -1012,6 +1125,115 @@ def package_all_assets(
         "letter_groups": letter_groups,
         "tasks": tasks
     }
+
+
+@app.task(base=LoggingTask, bind=True)
+def clean_packages(
+    self,
+    asset_dir: str,
+    package_dir: str
+) -> Dict:
+    """
+    Clean up packaging artifacts:
+    - Delete all package* files in asset_dir
+    - Delete db.sqlite in asset_dir
+    - Delete all files in asset_dir/temp/*
+    
+    Args:
+        asset_dir: Base asset directory (e.g., 'assets')
+        package_dir: Package directory to clean
+    
+    Returns:
+        Dict with cleanup results
+    """
+    import glob
+    import shutil
+    
+    logger.info(f"Starting package cleanup in {asset_dir}")
+    
+    results = {
+        "package_files_deleted": 0,
+        "db_deleted": False,
+        "temp_files_deleted": 0,
+        "errors": []
+    }
+    
+    try:
+        # Delete package* files in asset_dir
+        package_pattern = os.path.join(asset_dir, "package*")
+        for package_file in glob.glob(package_pattern):
+            try:
+                if os.path.isfile(package_file):
+                    os.remove(package_file)
+                    results["package_files_deleted"] += 1
+                    logger.info(f"Deleted package file: {package_file}")
+            except Exception as e:
+                error_msg = f"Failed to delete {package_file}: {e}"
+                logger.error(error_msg)
+                results["errors"].append(error_msg)
+        
+        # Delete db.sqlite in asset_dir
+        db_sqlite_path = os.path.join(asset_dir, "db.sqlite")
+        if os.path.exists(db_sqlite_path):
+            try:
+                os.remove(db_sqlite_path)
+                results["db_deleted"] = True
+                logger.info(f"Deleted db.sqlite: {db_sqlite_path}")
+            except Exception as e:
+                error_msg = f"Failed to delete db.sqlite: {e}"
+                logger.error(error_msg)
+                results["errors"].append(error_msg)
+        
+        # Delete all files in asset_dir/temp/*
+        temp_dir = os.path.join(asset_dir, "temp")
+        if os.path.exists(temp_dir):
+            # Recursively delete all subdirectories and files in temp/
+            for item in os.listdir(temp_dir):
+                item_path = os.path.join(temp_dir, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                        results["temp_files_deleted"] += 1
+                    elif os.path.isdir(item_path):
+                        # Count files before deletion
+                        for root, dirs, files in os.walk(item_path):
+                            results["temp_files_deleted"] += len(files)
+                        shutil.rmtree(item_path)
+                    logger.debug(f"Deleted temp item: {item_path}")
+                except Exception as e:
+                    error_msg = f"Failed to delete {item_path}: {e}"
+                    logger.error(error_msg)
+                    results["errors"].append(error_msg)
+        
+        # Also clean package_dir if specified
+        if package_dir and os.path.exists(package_dir):
+            for package_file in os.listdir(package_dir):
+                file_path = os.path.join(package_dir, package_file)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        results["package_files_deleted"] += 1
+                        logger.info(f"Deleted package file: {file_path}")
+                except Exception as e:
+                    error_msg = f"Failed to delete {file_path}: {e}"
+                    logger.error(error_msg)
+                    results["errors"].append(error_msg)
+        
+        logger.info(f"Package cleanup complete: {results}")
+        
+        return {
+            "status": "success",
+            **results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in clean_packages: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 @app.task(base=LoggingTask, bind=True)

@@ -406,6 +406,29 @@ def relocate_files_endpoint():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@moderator_bp.route("/api/clean-packages", methods=["POST"])
+def clean_packages_endpoint():
+    """Trigger async package cleanup task."""
+    try:
+        # Import Celery task
+        from scripts.celery_tasks import clean_packages
+        
+        # Get directories from config/env
+        asset_dir = os.getenv("STORAGE_DIRECTORY", "asset_library")
+        package_dir = os.path.join(asset_dir, "packages")
+        
+        # Queue the task
+        task = clean_packages.delay(asset_dir, package_dir)
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "message": "Package cleanup task queued"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @moderator_bp.route("/asset/<path:filename>", methods=["GET"])  # serve images from ASSET_DIRECTORY
 def serve_asset(filename: str):
     # Prevent directory traversal and enforce naming/extension
