@@ -1031,8 +1031,11 @@ def database_management():
 
                     shortdefs = db.get_shortdefs(word.uuid)
                     for sd in shortdefs:
-                        # Template expects a list of definition strings
-                        word_data["definitions"].append(sd.definition)
+                        # Include both definition text and sid
+                        word_data["definitions"].append({
+                            "sid": sd.id,
+                            "definition": sd.definition
+                        })
 
                     assets = db.get_external_assets(word.uuid)
                     for asset in assets:

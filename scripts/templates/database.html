@@ -193,7 +193,12 @@
                     <h6>Definitions:</h6>
                     <ul>
                         {% for def in word_data.definitions %}
-                        <li>{{ def }}</li>
+                        <li>
+                            {% if def.sid is defined %}
+                            <span class="badge bg-info me-2">sid: {{ def.sid }}</span>
+                            {% endif %}
+                            {{ def.definition if def.definition is defined else def }}
+                        </li>
                         {% endfor %}
                     </ul>
                     {% endif %}
