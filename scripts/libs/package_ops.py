@@ -24,41 +24,85 @@ def encode_audio_file(
 ) -> Dict[str, str]:
     """
     Encode audio file to low-bitrate mono AAC using ffmpeg.
+    Output goes to: output_dir/temp/{first_letter_of_uuid}/audio/
     
-    Checks for audio files in two locations:
-    1. output_dir/audio/{input_file} (new organized structure)
-    2. output_dir/{input_file} (legacy location)
+    Prefers variant 0, falls back to variant 1 if variant 0 doesn't exist.
+    Does not include variant number in output filename.
     
     Args:
-        input_file: Path to input audio file
-        output_dir: Directory containing files
+        input_file: Basename of input audio file (e.g., "word_abc123_0.aac")
+        output_dir: Base directory containing files
         bitrate: Target bitrate in kbps
         
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    # Try new audio/ subdirectory first
-    raw_path_new = os.path.join(output_dir, "audio", input_file)
-    raw_path_legacy = os.path.join(output_dir, input_file)
-    base_name = os.path.splitext(input_file)[0]
-    low_path = os.path.join(output_dir, f"low_{base_name}.aac")
+    import re
     
-    # Determine which path exists
-    if os.path.exists(raw_path_new):
-        raw_path = raw_path_new
-        logger.info(f"[encode_audio] Found audio file in audio/: {raw_path}")
-    elif os.path.exists(raw_path_legacy):
-        raw_path = raw_path_legacy
-        logger.info(f"[encode_audio] Found audio file in root: {raw_path}")
+    base_name = os.path.splitext(input_file)[0]
+    
+    # Parse filename to extract UUID, assetgroup, and variant
+    # Format: word_{uuid}_{variant}.ext or shortdef_{uuid}_{defid}_{variant}.ext
+    word_match = re.match(r'(word)_([a-f0-9\-]+)_(\d+)', base_name)
+    shortdef_match = re.match(r'(shortdef)_([a-f0-9\-]+)_(\d+)_(\d+)', base_name)
+    
+    if word_match:
+        assetgroup = 'word'
+        uuid = word_match.group(2)
+        variant = int(word_match.group(3))
+        def_id = None
+    elif shortdef_match:
+        assetgroup = 'shortdef'
+        uuid = shortdef_match.group(2)
+        def_id = shortdef_match.group(3)
+        variant = int(shortdef_match.group(4))
     else:
-        logger.warning(f"[encode_audio] Input file not found. Tried:")
-        logger.warning(f"  - {raw_path_new}")
-        logger.warning(f"  - {raw_path_legacy}")
+        logger.error(f"[encode_audio] Cannot parse filename: {input_file}")
+        return {"status": "error", "input_file": input_file, "output_file": None, "error": "Invalid filename format"}
+    
+    first_letter = uuid[0].lower()
+    
+    # Find source file - prefer variant 0, fallback to variant 1
+    raw_path = None
+    tried_paths = []
+    
+    for try_variant in [0, 1]:
+        if assetgroup == 'word':
+            try_filename = f"word_{uuid}_{try_variant}.aac"
+        else:  # shortdef
+            try_filename = f"shortdef_{uuid}_{def_id}_{try_variant}.aac"
+        
+        # Try audio/ subdirectory first, then legacy location
+        for try_dir in [os.path.join(output_dir, "audio"), output_dir]:
+            try_path = os.path.join(try_dir, try_filename)
+            tried_paths.append(try_path)
+            if os.path.exists(try_path):
+                raw_path = try_path
+                logger.info(f"[encode_audio] Found audio file (variant {try_variant}): {raw_path}")
+                break
+        
+        if raw_path:
+            break
+    
+    if not raw_path:
+        logger.warning(f"[encode_audio] Input file not found. Tried: {tried_paths}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
-    if os.path.exists(low_path):
-        logger.info(f"[encode_audio] Output file already exists: {low_path}")
-        return {"status": "skipped", "input_file": input_file, "output_file": low_path}
+    # Create output directory: temp/{first_letter}/audio/
+    temp_dir = os.path.join(output_dir, "temp", first_letter, "audio")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Output filename without variant number
+    if assetgroup == 'word':
+        output_filename = f"word_{uuid}.aac"
+    else:  # shortdef
+        output_filename = f"shortdef_{uuid}_{def_id}.aac"
+    
+    output_path = os.path.join(temp_dir, output_filename)
+    
+    if os.path.exists(output_path):
+        logger.info(f"[encode_audio] Output file already exists: {output_path}")
+        return {"status": "skipped", "input_file": input_file, "output_file": output_path}
     
     try:
         subprocess.run(
@@ -69,14 +113,14 @@ def encode_audio_file(
                 "-ac", "1",  # mono
                 "-b:a", f"{bitrate}k",
                 "-ar", "24000",
-                low_path,
+                output_path,
                 "-loglevel", "quiet",
             ],
             check=True,
             capture_output=True
         )
-        logger.info(f"[encode_audio] ✓ Encoded audio: {raw_path} -> {low_path}")
-        return {"status": "success", "input_file": input_file, "output_file": low_path}
+        logger.info(f"[encode_audio] ✓ Encoded audio: {raw_path} -> {output_path}")
+        return {"status": "success", "input_file": input_file, "output_file": output_path}
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg error encoding {raw_path}: {e.stderr}")
         return {"status": "error", "input_file": input_file, "output_file": None, "error": str(e)}
@@ -89,41 +133,70 @@ def encode_image_file(
 ) -> Dict[str, str]:
     """
     Reduce image resolution and convert to HEIF using ImageMagick.
+    Output goes to: output_dir/temp/{first_letter_of_uuid}/image/
     
-    Checks for image files in two locations:
-    1. output_dir/image/{input_file} (new organized structure)
-    2. output_dir/{input_file} (legacy location)
+    Prefers variant 0, falls back to variant 1 if variant 0 doesn't exist.
+    Does not include variant number in output filename.
     
     Args:
-        input_file: Path to input image file
-        output_dir: Directory containing files
+        input_file: Basename of input image file (e.g., "image_abc123_1_0.png")
+        output_dir: Base directory containing files
         quality: HEIF quality (0-100)
         
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    # Try new image/ subdirectory first
-    raw_path_new = os.path.join(output_dir, "image", input_file)
-    raw_path_legacy = os.path.join(output_dir, input_file)
-    base_name = os.path.splitext(input_file)[0]
-    low_path = os.path.join(output_dir, f"low_{base_name}.heif")
+    import re
     
-    # Determine which path exists
-    if os.path.exists(raw_path_new):
-        raw_path = raw_path_new
-        logger.info(f"[encode_image] Found image file in image/: {raw_path}")
-    elif os.path.exists(raw_path_legacy):
-        raw_path = raw_path_legacy
-        logger.info(f"[encode_image] Found image file in root: {raw_path}")
-    else:
-        logger.warning(f"[encode_image] Input file not found. Tried:")
-        logger.warning(f"  - {raw_path_new}")
-        logger.warning(f"  - {raw_path_legacy}")
+    base_name = os.path.splitext(input_file)[0]
+    
+    # Parse filename to extract UUID, def_id, and variant
+    # Format: image_{uuid}_{defid}_{variant}.ext
+    image_match = re.match(r'image_([a-f0-9\-]+)_(\d+)_(\d+)', base_name)
+    
+    if not image_match:
+        logger.error(f"[encode_image] Cannot parse filename: {input_file}")
+        return {"status": "error", "input_file": input_file, "output_file": None, "error": "Invalid filename format"}
+    
+    uuid = image_match.group(1)
+    def_id = image_match.group(2)
+    variant = int(image_match.group(3))
+    first_letter = uuid[0].lower()
+    
+    # Find source file - prefer variant 0, fallback to variant 1
+    raw_path = None
+    tried_paths = []
+    
+    for try_variant in [0, 1]:
+        try_filename = f"image_{uuid}_{def_id}_{try_variant}.png"
+        
+        # Try image/ subdirectory first, then legacy location
+        for try_dir in [os.path.join(output_dir, "image"), output_dir]:
+            try_path = os.path.join(try_dir, try_filename)
+            tried_paths.append(try_path)
+            if os.path.exists(try_path):
+                raw_path = try_path
+                logger.info(f"[encode_image] Found image file (variant {try_variant}): {raw_path}")
+                break
+        
+        if raw_path:
+            break
+    
+    if not raw_path:
+        logger.warning(f"[encode_image] Input file not found. Tried: {tried_paths}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
-    if os.path.exists(low_path):
-        logger.info(f"[encode_image] Output file already exists: {low_path}")
-        return {"status": "skipped", "input_file": input_file, "output_file": low_path}
+    # Create output directory: temp/{first_letter}/image/
+    temp_dir = os.path.join(output_dir, "temp", first_letter, "image")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Output filename without variant number
+    output_filename = f"image_{uuid}_{def_id}.heif"
+    output_path = os.path.join(temp_dir, output_filename)
+    
+    if os.path.exists(output_path):
+        logger.info(f"[encode_image] Output file already exists: {output_path}")
+        return {"status": "skipped", "input_file": input_file, "output_file": output_path}
     
     try:
         subprocess.run(
@@ -132,13 +205,13 @@ def encode_image_file(
                 raw_path,
                 "-resize", "512x768\!",
                 "-quality", str(quality),
-                low_path,
+                output_path,
             ],
             check=True,
             capture_output=True
         )
-        logger.info(f"[encode_image] ✓ Encoded image: {raw_path} -> {low_path}")
-        return {"status": "success", "input_file": input_file, "output_file": low_path}
+        logger.info(f"[encode_image] ✓ Encoded image: {raw_path} -> {output_path}")
+        return {"status": "success", "input_file": input_file, "output_file": output_path}
     except subprocess.CalledProcessError as e:
         logger.error(f"ImageMagick error encoding {raw_path}: {e.stderr}")
         return {"status": "error", "input_file": input_file, "output_file": None, "error": str(e)}
@@ -168,13 +241,26 @@ def add_file_to_package(
         logger.warning(f"[add_file_to_package] File not found: {filename}")
         return None
     
-    # Extract first letter for package naming
-    path_re = r"low_(?:image|word|shortdef)_([a-z0-9])"
+    # Extract first letter from UUID in filename
+    # Format: temp/{letter}/{assetgroup}/{assettype}_{uuid}_...{ext}
+    path_re = r"(?:image|word|shortdef)_([a-f0-9])[a-f0-9\-]+"
     match = re.search(path_re, filename)
     if match:
         first_letter = match.group(1)
     else:
-        first_letter = os.path.basename(filename)[0]
+        # Fallback: try to extract from path
+        if '/temp/' in filename:
+            parts = filename.split('/temp/')
+            if len(parts) > 1:
+                temp_parts = parts[1].split('/')
+                if temp_parts:
+                    first_letter = temp_parts[0]
+                else:
+                    first_letter = os.path.basename(filename)[0]
+            else:
+                first_letter = os.path.basename(filename)[0]
+        else:
+            first_letter = os.path.basename(filename)[0]
     
     logger.info(f"[add_file_to_package] Extracted letter: {first_letter}")
     

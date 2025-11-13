@@ -195,10 +195,19 @@ def build_tests_add_answer():
     if not question_id or not word:
         return jsonify(success=False, error="Missing question_id or word.")
     try:
-        # Insert answer (body=word)
+        # Look up the word UUID from the dictionary
+        from libs.sqlite_dictionary import SQLiteDictionary
+        with SQLiteDictionary(DICT_PATH) as dict_db:
+            word_uuids = dict_db.get_uuids(word)
+            if not word_uuids:
+                return jsonify(success=False, error=f"Word '{word}' not found in dictionary.")
+            # Use the first UUID if multiple entries exist for the same word
+            word_uuid = word_uuids[0]
+        
+        # Insert answer with word UUID
         with PostgresTestDatabase() as testdb:
             try:
-                testdb.create_answer(int(question_id), word, bool(is_correct))
+                testdb.create_answer(int(question_id), word_uuid, bool(is_correct))
             except Exception as e:
                 # Check for unique constraint violation (duplicate answer)
                 if 'duplicate key value violates unique constraint' in str(e):
@@ -216,27 +225,41 @@ def view_tests():
 @app.route("/view_tests/get_data")
 def view_tests_get_data():
     try:
-        with PostgresTestDatabase() as testdb:
-            tests = testdb.get_all_tests()
-            result = []
-            for test in tests:
-                questions = testdb.get_questions_for_test(test.id)
-                questions_data = []
-                for question in questions:
-                    answers = testdb.get_answers_for_question(question.id)
-                    questions_data.append({
-                        "id": question.id,
-                        "prompt": question.prompt,
-                        "explanation": question.explanation,
-                        "answers": [{"id": a.id, "body": a.body, "is_correct": a.is_correct, "weight": a.weight} for a in answers]
+        # Import dictionary to look up words
+        from libs.sqlite_dictionary import SQLiteDictionary
+        with SQLiteDictionary(DICT_PATH) as dict_db:
+            with PostgresTestDatabase() as testdb:
+                tests = testdb.get_all_tests()
+                result = []
+                for test in tests:
+                    questions = testdb.get_questions_for_test(test.id)
+                    questions_data = []
+                    for question in questions:
+                        answers = testdb.get_answers_for_question(question.id)
+                        # Look up word text from UUIDs
+                        answers_data = []
+                        for a in answers:
+                            word_obj = dict_db.get_word_by_uuid(a.body_uuid)
+                            word_text = word_obj.word if word_obj else f"[UUID: {a.body_uuid}]"
+                            answers_data.append({
+                                "id": a.id,
+                                "body": word_text,
+                                "is_correct": a.is_correct,
+                                "weight": a.weight
+                            })
+                        questions_data.append({
+                            "id": question.id,
+                            "prompt": question.prompt,
+                            "explanation": question.explanation,
+                            "answers": answers_data
+                        })
+                    result.append({
+                        "id": test.id,
+                        "name": test.name,
+                        "version": test.version,
+                        "created_at": test.created_at.isoformat(),
+                        "questions": questions_data
                     })
-                result.append({
-                    "id": test.id,
-                    "name": test.name,
-                    "version": test.version,
-                    "created_at": test.created_at.isoformat(),
-                    "questions": questions_data
-                })
         return jsonify(success=True, tests=result)
     except Exception as e:
         import traceback

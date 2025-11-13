@@ -320,7 +320,6 @@ def generate_audio_via_comfy(
     output_path: str,
     cfg_filename: str = "audio-tts.json",
     timeout: int = 60,
-    audio_format: str = "aac",
 ) -> Dict[str, Optional[str]]:
     """Run a ComfyUI workflow to generate an image and save it to output_path.
 

@@ -12,6 +12,18 @@ import re
 # Load environment variables from .env file
 load_dotenv()
 
+# ===================================================================
+# NOTE: This standalone script is DEPRECATED for packaging assets.
+# The external_assets table is deprecated.
+#
+# PREFERRED APPROACH: Use the Celery task system instead:
+#   - package_all_assets: Launches 16 parallel tasks for [a-f, 0-9]
+#   - package_asset_group: Processes all assets for a specific letter
+#
+# This script is kept for backwards compatibility but should not be
+# used for new workflows.
+# ===================================================================
+
 OUTDIR = "assets_hires"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
@@ -214,6 +226,16 @@ def clean_packages() -> None:
 
 
 def main():
+    """
+    DEPRECATED: This standalone packaging script is deprecated.
+    
+    Use the Celery task system instead:
+        from celery_tasks import package_all_assets
+        task = package_all_assets.delay(db_path, asset_dir, package_dir)
+    
+    The package_all_assets task will launch 16 parallel tasks for [a-f, 0-9]
+    and does NOT write to the external_assets table (which is deprecated).
+    """
     parser = argparse.ArgumentParser(description="Package assets for distribution")
     parser.add_argument(
         "--dryrun", action="store_true", help="Show actions without writing files"
@@ -346,6 +368,85 @@ def main():
                     )
 
     db.close()
+    
+    # Export words and shortdef tables to assets/db.sqlite
+    if not args.dryrun:
+        if args.verbosity >= 1:
+            print("Exporting words and shortdef tables to assets/db.sqlite...")
+        
+        try:
+            # Determine the source database path
+            source_db = sqlite_path
+            
+            # Create assets directory if it doesn't exist
+            assets_dir = "assets"
+            os.makedirs(assets_dir, exist_ok=True)
+            
+            # Path for the exported db
+            export_db_path = os.path.join(assets_dir, "db.sqlite")
+            
+            # Remove existing db.sqlite if it exists
+            if os.path.exists(export_db_path):
+                os.remove(export_db_path)
+                print(f"[EXPORT] Removed existing {export_db_path}")
+            
+            # Connect to source and export databases
+            import sqlite3
+            source_conn = sqlite3.connect(source_db)
+            export_conn = sqlite3.connect(export_db_path)
+            
+            # Create the tables in the export database
+            export_conn.execute("""CREATE TABLE words (
+                word TEXT NOT NULL,
+                functional_label TEXT,
+                uuid TEXT PRIMARY KEY,
+                flags INTEGER DEFAULT 0,
+                level TEXT
+            )""")
+            export_conn.execute("""CREATE INDEX idx_words_word ON words(word)""")
+            export_conn.execute("""CREATE INDEX idx_words_level ON words(level)""")
+            
+            export_conn.execute("""CREATE TABLE shortdef (
+                uuid TEXT,
+                definition TEXT,
+                id INTEGER PRIMARY KEY,
+                FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
+                UNIQUE(uuid, definition)
+            )""")
+            export_conn.execute("""CREATE INDEX idx_shortdef_uuid ON shortdef(uuid)""")
+            
+            # Copy data from source to export
+            source_cursor = source_conn.cursor()
+            export_cursor = export_conn.cursor()
+            
+            # Copy words table
+            source_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words")
+            words_data = source_cursor.fetchall()
+            export_cursor.executemany(
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
+                words_data
+            )
+            
+            # Copy shortdef table
+            source_cursor.execute("SELECT uuid, definition, id FROM shortdef")
+            shortdef_data = source_cursor.fetchall()
+            export_cursor.executemany(
+                "INSERT INTO shortdef (uuid, definition, id) VALUES (?, ?, ?)",
+                shortdef_data
+            )
+            
+            # Commit and close
+            export_conn.commit()
+            source_conn.close()
+            export_conn.close()
+            
+            if args.verbosity >= 1:
+                export_size = os.path.getsize(export_db_path)
+                print(f"✓ Exported {len(words_data)} words and {len(shortdef_data)} definitions to {export_db_path} ({export_size:,} bytes)")
+        except Exception as e:
+            print(f"Error exporting db.sqlite: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Move temp DB to final destination if needed
     if temp_db_path and final_db_destination:

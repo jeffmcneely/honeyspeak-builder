@@ -139,6 +139,76 @@ words (1) ──< shortdef (many)
   └──< external_assets (many)
 
 shortdef (1) ──< external_assets (many)  [via sid]
+
+test (1) ──< question (many)
+
+question (1) ──< answer (many)
+  └──> words (via body_uuid)
+```
+
+### test
+
+```sql
+CREATE TABLE test (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  version    INTEGER DEFAULT 1,
+  created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+- id: INTEGER — primary key
+- name: TEXT — test name (required)
+- version: INTEGER — test version number (default 1)
+- created_at: TEXT — timestamp when test was created
+
+### question
+
+```sql
+CREATE TABLE question (
+  id        INTEGER PRIMARY KEY,
+  test_id   INTEGER NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+  level     TEXT,
+  prompt    TEXT    NOT NULL,
+  explanation TEXT,
+  flags     INTEGER DEFAULT 0,
+  UNIQUE(test_id, prompt)
+);
+```
+
+- id: INTEGER — primary key
+- test_id: INTEGER — FK → test.id
+- level: TEXT — CEFR level (e.g., "a1", "a2", "b1", "b2", "c1", "c2")
+- prompt: TEXT — question prompt (required)
+- explanation: TEXT — optional explanation for the answer
+- flags: INTEGER — bitfield for question flags
+- UNIQUE constraint on (test_id, prompt)
+
+### answer
+
+```sql
+CREATE TABLE answer (
+  id          INTEGER PRIMARY KEY,
+  question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
+  body_uuid   TEXT    NOT NULL,
+  is_correct  INTEGER NOT NULL CHECK (is_correct IN (0,1)),
+  weight      REAL    DEFAULT 1.0,
+  UNIQUE(question_id, body_uuid)
+);
+```
+
+- id: INTEGER — primary key
+- question_id: INTEGER — FK → question.id
+- body_uuid: TEXT — UUID of the word from words table (stores the word UUID, not the word text)
+- is_correct: INTEGER — 1 if correct answer, 0 if incorrect (CHECK constraint)
+- weight: REAL — weight for scoring (default 1.0)
+- UNIQUE constraint on (question_id, body_uuid)
+
+Indexes:
+```sql
+CREATE INDEX idx_answer_qid           ON answer(question_id);
+CREATE INDEX idx_answer_qid_correct   ON answer(question_id) WHERE is_correct = 1;
+CREATE INDEX idx_answer_qid_incorrect ON answer(question_id) WHERE is_correct = 0;
 ```
 
 ### Asset naming conventions
