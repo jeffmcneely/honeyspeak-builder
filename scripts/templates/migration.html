@@ -48,6 +48,30 @@
       </div>
     </div>
   </div>
+  
+  <div class="row mt-4">
+    <div class="col-md-12">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">🧹 Clean Packages</h5>
+          <p class="card-text">
+            Delete all packaging artifacts to prepare for a fresh package build:
+          </p>
+          <ul>
+            <li><strong>package*</strong> files in assets directory</li>
+            <li><strong>db.sqlite</strong> in assets directory</li>
+            <li>All files in <strong>assets/temp/*</strong></li>
+          </ul>
+          <p class="text-warning"><strong>⚠️ This will remove all packaged files. You'll need to rebuild packages after this.</strong></p>
+          <button id="cleanPackagesBtn" class="btn btn-warning">
+            <span class="spinner-border spinner-border-sm d-none" role="status" id="cleanSpinner"></span>
+            Clean Packages
+          </button>
+          <div id="cleanResult" class="mt-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -135,6 +159,65 @@ $(document).ready(function() {
     
     $.ajax({
       url: '/moderator/api/delete-conceptual-images',
+      method: 'POST',
+      success: function(response) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        if (response.ok) {
+          $result.html(`
+            <div class="alert alert-success">
+              <strong>Task Started!</strong><br>
+              Task ID: <code>${response.task_id}</code><br>
+              <small>Check <a href="/celery_status">Celery Status</a> for progress.</small>
+            </div>
+          `);
+        } else {
+          $result.html(`
+            <div class="alert alert-danger">
+              <strong>Error:</strong> ${response.error || 'Unknown error'}
+            </div>
+          `);
+        }
+      },
+      error: function(xhr) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        let errorMsg = 'Request failed';
+        try {
+          const response = JSON.parse(xhr.responseText);
+          errorMsg = response.error || errorMsg;
+        } catch (e) {}
+        
+        $result.html(`
+          <div class="alert alert-danger">
+            <strong>Error:</strong> ${errorMsg}
+          </div>
+        `);
+      }
+    });
+  });
+  
+  // Clean Packages handler
+  $('#cleanPackagesBtn').on('click', function(e) {
+    e.preventDefault();
+    
+    if (!confirm('Clean all packaging artifacts?\n\nThis will delete:\n- All package* files\n- db.sqlite in assets directory\n- All files in assets/temp/*\n\n⚠️ You will need to rebuild packages after this.\n\nContinue?')) {
+      return;
+    }
+    
+    const $btn = $(this);
+    const $spinner = $('#cleanSpinner');
+    const $result = $('#cleanResult');
+    
+    // Disable button and show spinner
+    $btn.prop('disabled', true);
+    $spinner.removeClass('d-none');
+    $result.html('');
+    
+    $.ajax({
+      url: '/moderator/api/clean-packages',
       method: 'POST',
       success: function(response) {
         $btn.prop('disabled', false);
