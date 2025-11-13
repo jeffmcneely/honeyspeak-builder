@@ -75,11 +75,11 @@ SQLITE_SCHEMA = [
     """CREATE TABLE answer (
         id          INTEGER PRIMARY KEY,
         question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
-        body        TEXT    NOT NULL,
+        body_uuid        TEXT    NOT NULL,
         is_correct  INTEGER NOT NULL CHECK (is_correct IN (0,1)),
         weight      REAL    DEFAULT 1.0,        -- for sampling if needed
-        UNIQUE(question_id, body)
-    )""",
+        UNIQUE(question_id, body_uuid)
+    """,
     """CREATE INDEX idx_answer_qid           ON answer(question_id)""",
     """CREATE INDEX idx_answer_qid_correct   ON answer(question_id) WHERE is_correct = 1""",
     """CREATE INDEX idx_answer_qid_incorrect ON answer(question_id) WHERE is_correct = 0"""
