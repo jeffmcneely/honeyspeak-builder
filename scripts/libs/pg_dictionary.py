@@ -58,7 +58,16 @@ POSTGRES_SCHEMA = [
         PRIMARY KEY(story_uuid, paragraph_index),
         FOREIGN KEY(story_uuid) REFERENCES stories(uuid) ON DELETE CASCADE
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_story_paragraphs_uuid ON story_paragraphs(story_uuid)"""
+    """CREATE INDEX IF NOT EXISTS idx_story_paragraphs_uuid ON story_paragraphs(story_uuid)""",
+    """CREATE TABLE IF NOT EXISTS story_words(
+        story_uuid TEXT,
+        word_uuid TEXT,
+        paragraph_index INTEGER,
+        FOREIGN KEY(story_uuid) REFERENCES stories(uuid) ON DELETE CASCADE,
+        FOREIGN KEY(word_uuid) REFERENCES words(uuid) ON DELETE CASCADE
+        )""",
+    """CREATE INDEX IF NOT EXISTS idx_story_words_uuid ON story_words(story_uuid)""",
+    """CREATE INDEX IF NOT EXISTS idx_story_words_word_uuid ON story_words(word_uuid)"""
 ]
 
 # Reuse dataclasses from sqlite_dictionary
@@ -560,6 +569,76 @@ class PostgresDictionary:
         """Get all stories."""
         rows = self.execute_fetchall("SELECT * FROM stories ORDER BY title")
         return [Story.from_row(row) for row in rows]
+    
+    def add_story_word(self, story_uuid: str, word_uuid: str, paragraph_index: int):
+        """Add a word reference to a story."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO story_words (story_uuid, word_uuid, paragraph_index)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT DO NOTHING""",
+                    (story_uuid, word_uuid, paragraph_index)
+                )
+                conn.commit()
+        finally:
+            conn.close()
+    
+    def batch_add_story_words(self, story_words: List[tuple]) -> int:
+        """
+        Add multiple story word references in a single transaction.
+        
+        Args:
+            story_words: List of (story_uuid, word_uuid, paragraph_index) tuples
+        
+        Returns:
+            Number of story words added
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.executemany(
+                    """INSERT INTO story_words (story_uuid, word_uuid, paragraph_index)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT DO NOTHING""",
+                    story_words
+                )
+                count = cursor.rowcount
+                conn.commit()
+                return count
+        except Exception as e:
+            self.logger.error(f"[batch_add_story_words] Exception: {e}")
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    
+    def get_story_words(self, story_uuid: str) -> List[dict]:
+        """Get all word UUIDs and paragraph indices for a story."""
+        rows = self.execute_fetchall(
+            """SELECT word_uuid, paragraph_index 
+               FROM story_words 
+               WHERE story_uuid = %s 
+               ORDER BY paragraph_index, word_uuid""",
+            (story_uuid,)
+        )
+        return [{"word_uuid": row["word_uuid"], "paragraph_index": row["paragraph_index"]} for row in rows]
+    
+    def delete_story_words(self, story_uuid: str) -> int:
+        """Delete all word references for a story."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM story_words WHERE story_uuid = %s",
+                    (story_uuid,)
+                )
+                count = cursor.rowcount
+                conn.commit()
+                return count
+        finally:
+            conn.close()
     
     def vacuum(self):
         """PostgreSQL doesn't need explicit VACUUM in normal operation."""
