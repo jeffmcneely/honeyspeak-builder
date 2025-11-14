@@ -195,10 +195,19 @@ def build_tests_add_answer():
     if not question_id or not word:
         return jsonify(success=False, error="Missing question_id or word.")
     try:
-        # Insert answer (body=word)
+        # Look up the word UUID from the dictionary
+        from libs.sqlite_dictionary import SQLiteDictionary
+        with SQLiteDictionary(DICT_PATH) as dict_db:
+            word_uuids = dict_db.get_uuids(word)
+            if not word_uuids:
+                return jsonify(success=False, error=f"Word '{word}' not found in dictionary.")
+            # Use the first UUID if multiple entries exist for the same word
+            word_uuid = word_uuids[0]
+        
+        # Insert answer with word UUID
         with PostgresTestDatabase() as testdb:
             try:
-                testdb.create_answer(int(question_id), word, bool(is_correct))
+                testdb.create_answer(int(question_id), word_uuid, bool(is_correct))
             except Exception as e:
                 # Check for unique constraint violation (duplicate answer)
                 if 'duplicate key value violates unique constraint' in str(e):
@@ -216,27 +225,41 @@ def view_tests():
 @app.route("/view_tests/get_data")
 def view_tests_get_data():
     try:
-        with PostgresTestDatabase() as testdb:
-            tests = testdb.get_all_tests()
-            result = []
-            for test in tests:
-                questions = testdb.get_questions_for_test(test.id)
-                questions_data = []
-                for question in questions:
-                    answers = testdb.get_answers_for_question(question.id)
-                    questions_data.append({
-                        "id": question.id,
-                        "prompt": question.prompt,
-                        "explanation": question.explanation,
-                        "answers": [{"id": a.id, "body": a.body, "is_correct": a.is_correct, "weight": a.weight} for a in answers]
+        # Import dictionary to look up words
+        from libs.sqlite_dictionary import SQLiteDictionary
+        with SQLiteDictionary(DICT_PATH) as dict_db:
+            with PostgresTestDatabase() as testdb:
+                tests = testdb.get_all_tests()
+                result = []
+                for test in tests:
+                    questions = testdb.get_questions_for_test(test.id)
+                    questions_data = []
+                    for question in questions:
+                        answers = testdb.get_answers_for_question(question.id)
+                        # Look up word text from UUIDs
+                        answers_data = []
+                        for a in answers:
+                            word_obj = dict_db.get_word_by_uuid(a.body_uuid)
+                            word_text = word_obj.word if word_obj else f"[UUID: {a.body_uuid}]"
+                            answers_data.append({
+                                "id": a.id,
+                                "body": word_text,
+                                "is_correct": a.is_correct,
+                                "weight": a.weight
+                            })
+                        questions_data.append({
+                            "id": question.id,
+                            "prompt": question.prompt,
+                            "explanation": question.explanation,
+                            "answers": answers_data
+                        })
+                    result.append({
+                        "id": test.id,
+                        "name": test.name,
+                        "version": test.version,
+                        "created_at": test.created_at.isoformat(),
+                        "questions": questions_data
                     })
-                result.append({
-                    "id": test.id,
-                    "name": test.name,
-                    "version": test.version,
-                    "created_at": test.created_at.isoformat(),
-                    "questions": questions_data
-                })
         return jsonify(success=True, tests=result)
     except Exception as e:
         import traceback
@@ -695,6 +718,40 @@ def build_package():
     backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
     return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
 
+@app.route("/api/package_results")
+def get_package_results():
+    """Get the overall package results from package_result.json"""
+    import json
+    result_file = Path(ASSET_DIR) / "package_result.json"
+    if not result_file.exists():
+        return jsonify({"status": "not_found", "message": "No package results found"})
+    
+    try:
+        with open(result_file, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/package_results/<letter>")
+def get_package_letter_results(letter):
+    """Get individual letter package results from {letter}.json"""
+    import json
+    # Validate letter is in valid set
+    if letter not in "abcdef0123456789":
+        return jsonify({"status": "error", "error": "Invalid letter"}), 400
+    
+    result_file = Path(ASSET_DIR) / f"{letter}.json"
+    if not result_file.exists():
+        return jsonify({"status": "not_found", "message": f"No results found for letter '{letter}'"})
+    
+    try:
+        with open(result_file, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 @app.route("/download")
 def download():
     db_files = list_db_files()
@@ -1031,8 +1088,11 @@ def database_management():
 
                     shortdefs = db.get_shortdefs(word.uuid)
                     for sd in shortdefs:
-                        # Template expects a list of definition strings
-                        word_data["definitions"].append(sd.definition)
+                        # Include both definition text and sid
+                        word_data["definitions"].append({
+                            "sid": sd.id,
+                            "definition": sd.definition
+                        })
 
                     assets = db.get_external_assets(word.uuid)
                     for asset in assets:

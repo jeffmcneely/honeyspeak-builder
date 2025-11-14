@@ -24,43 +24,86 @@ def encode_audio_file(
 ) -> Dict[str, str]:
     """
     Encode audio file to low-bitrate mono AAC using ffmpeg.
+    Output goes to: output_dir/temp/{first_letter_of_uuid}/audio/
     
-    Checks for audio files in two locations:
-    1. output_dir/audio/{input_file} (new organized structure)
-    2. output_dir/{input_file} (legacy location)
+    Prefers variant 0, falls back to variant 1 if variant 0 doesn't exist.
+    Does not include variant number in output filename.
     
     Args:
-        input_file: Path to input audio file
-        output_dir: Directory containing files
+        input_file: Full path to input audio file
+        output_dir: Base temp directory (e.g., 'asset_library/hires/temp')
         bitrate: Target bitrate in kbps
         
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    # Try new audio/ subdirectory first
-    raw_path_new = os.path.join(output_dir, "audio", input_file)
-    raw_path_legacy = os.path.join(output_dir, input_file)
-    base_name = os.path.splitext(input_file)[0]
-    low_path = os.path.join(output_dir, f"low_{base_name}.aac")
+    import re
     
-    # Determine which path exists
-    if os.path.exists(raw_path_new):
-        raw_path = raw_path_new
-        logger.info(f"[encode_audio] Found audio file in audio/: {raw_path}")
-    elif os.path.exists(raw_path_legacy):
-        raw_path = raw_path_legacy
-        logger.info(f"[encode_audio] Found audio file in root: {raw_path}")
+    logger.debug(f"[encode_audio] Starting with input_file={input_file}")
+    logger.debug(f"[encode_audio] output_dir={output_dir}")
+    logger.debug(f"[encode_audio] input_file exists: {os.path.exists(input_file)}")
+    
+    # Extract just the basename for parsing
+    basename = os.path.basename(input_file)
+    base_name = os.path.splitext(basename)[0]
+    logger.debug(f"[encode_audio] basename={basename}, base_name={base_name}")
+    
+    # Parse filename to extract UUID, assetgroup, and variant
+    # Format: word_{uuid}_{variant}.ext or shortdef_{uuid}_{defid}_{variant}.ext
+    word_match = re.match(r'(word)_([a-f0-9\-]+)_(\d+)', base_name)
+    shortdef_match = re.match(r'(shortdef)_([a-f0-9\-]+)_(\d+)_(\d+)', base_name)
+    shortdef_simple_match = re.match(r'(shortdef)_([a-f0-9\-]+)_(\d+)', base_name)
+
+    if word_match:
+        assetgroup = 'word'
+        uuid = word_match.group(2)
+        variant = int(word_match.group(3))
+        def_id = None
+    elif shortdef_match:
+        assetgroup = 'shortdef'
+        uuid = shortdef_match.group(2)
+        def_id = shortdef_match.group(3)
+        variant = int(shortdef_match.group(4))
+    elif shortdef_simple_match:
+        assetgroup = 'shortdef'
+        uuid = shortdef_simple_match.group(2)
+        def_id = shortdef_simple_match.group(3)
+        variant = 0
     else:
-        logger.warning(f"[encode_audio] Input file not found. Tried:")
-        logger.warning(f"  - {raw_path_new}")
-        logger.warning(f"  - {raw_path_legacy}")
+        logger.error(f"[encode_audio] Cannot parse filename: {basename}")
+        logger.error(f"[encode_audio] Expected pattern: word_{{uuid}}_{{variant}}.ext or shortdef_{{uuid}}_{{defid}}_{{variant}}.ext or shortdef_{{uuid}}_{{id}}.ext")
+        return {"status": "error", "input_file": input_file, "output_file": None, "error": "Invalid filename format"}
+    
+    first_letter = uuid[0].lower()
+    logger.debug(f"[encode_audio] Parsed: uuid={uuid}, assetgroup={assetgroup}, def_id={def_id}, variant={variant}, first_letter={first_letter}")
+    
+    # Use the provided input file directly
+    raw_path = input_file
+    
+    if not os.path.exists(raw_path):
+        logger.warning(f"[encode_audio] Input file not found: {raw_path}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
-    if os.path.exists(low_path):
-        logger.info(f"[encode_audio] Output file already exists: {low_path}")
-        return {"status": "skipped", "input_file": input_file, "output_file": low_path}
+    # Create output directory: temp/{first_letter}/audio/
+    temp_dir = os.path.join(output_dir, first_letter, "audio")
+    os.makedirs(temp_dir, exist_ok=True)
+    logger.debug(f"[encode_audio] temp_dir={temp_dir}")
+    
+    # Output filename without variant number
+    if assetgroup == 'word':
+        output_filename = f"word_{uuid}.aac"
+    else:  # shortdef
+        output_filename = f"shortdef_{uuid}_{def_id}.aac"
+    
+    output_path = os.path.join(temp_dir, output_filename)
+    logger.debug(f"[encode_audio] output_path={output_path}")
+    
+    if os.path.exists(output_path):
+        logger.debug(f"[encode_audio] Output file already exists: {output_path}")
+        return {"status": "skipped", "input_file": input_file, "output_file": output_path}
     
     try:
+        logger.debug(f"[encode_audio] Running ffmpeg: ffmpeg -y -i {raw_path} -ac 1 -b:a {bitrate}k -ar 24000 {output_path}")
         subprocess.run(
             [
                 "ffmpeg",
@@ -69,16 +112,19 @@ def encode_audio_file(
                 "-ac", "1",  # mono
                 "-b:a", f"{bitrate}k",
                 "-ar", "24000",
-                low_path,
+                output_path,
                 "-loglevel", "quiet",
             ],
             check=True,
             capture_output=True
         )
-        logger.info(f"[encode_audio] ✓ Encoded audio: {raw_path} -> {low_path}")
-        return {"status": "success", "input_file": input_file, "output_file": low_path}
+        logger.debug(f"[encode_audio] ✓ Encoded audio: {raw_path} -> {output_path}")
+        logger.debug(f"[encode_audio] Output file exists: {os.path.exists(output_path)}")
+        return {"status": "success", "input_file": input_file, "output_file": output_path}
     except subprocess.CalledProcessError as e:
-        logger.error(f"FFmpeg error encoding {raw_path}: {e.stderr}")
+        logger.error(f"[encode_audio] FFmpeg error encoding {raw_path}")
+        logger.error(f"[encode_audio] stderr: {e.stderr.decode() if e.stderr else 'none'}")
+        logger.error(f"[encode_audio] stdout: {e.stdout.decode() if e.stdout else 'none'}")
         return {"status": "error", "input_file": input_file, "output_file": None, "error": str(e)}
 
 
@@ -89,58 +135,87 @@ def encode_image_file(
 ) -> Dict[str, str]:
     """
     Reduce image resolution and convert to HEIF using ImageMagick.
+    Output goes to: output_dir/temp/{first_letter_of_uuid}/image/
     
-    Checks for image files in two locations:
-    1. output_dir/image/{input_file} (new organized structure)
-    2. output_dir/{input_file} (legacy location)
+    Prefers variant 0, falls back to variant 1 if variant 0 doesn't exist.
+    Does not include variant number in output filename.
     
     Args:
-        input_file: Path to input image file
-        output_dir: Directory containing files
+        input_file: Full path to input image file
+        output_dir: Base temp directory (e.g., 'asset_library/hires/temp')
         quality: HEIF quality (0-100)
         
     Returns:
         Dict with 'status', 'input_file', and 'output_file' keys
     """
-    # Try new image/ subdirectory first
-    raw_path_new = os.path.join(output_dir, "image", input_file)
-    raw_path_legacy = os.path.join(output_dir, input_file)
-    base_name = os.path.splitext(input_file)[0]
-    low_path = os.path.join(output_dir, f"low_{base_name}.heif")
+    import re
     
-    # Determine which path exists
-    if os.path.exists(raw_path_new):
-        raw_path = raw_path_new
-        logger.info(f"[encode_image] Found image file in image/: {raw_path}")
-    elif os.path.exists(raw_path_legacy):
-        raw_path = raw_path_legacy
-        logger.info(f"[encode_image] Found image file in root: {raw_path}")
-    else:
-        logger.warning(f"[encode_image] Input file not found. Tried:")
-        logger.warning(f"  - {raw_path_new}")
-        logger.warning(f"  - {raw_path_legacy}")
+    logger.debug(f"[encode_image] Starting with input_file={input_file}")
+    logger.debug(f"[encode_image] output_dir={output_dir}")
+    logger.debug(f"[encode_image] input_file exists: {os.path.exists(input_file)}")
+    
+    # Extract just the basename for parsing
+    basename = os.path.basename(input_file)
+    base_name = os.path.splitext(basename)[0]
+    logger.debug(f"[encode_image] basename={basename}, base_name={base_name}")
+    
+    # Parse filename to extract UUID, def_id, and variant
+    # Format: image_{uuid}_{defid}_{variant}.ext
+    image_match = re.match(r'image_([a-f0-9\-]+)_(\d+)_(\d+)', base_name)
+    
+    if not image_match:
+        logger.error(f"[encode_image] Cannot parse filename: {basename}")
+        logger.error(f"[encode_image] Expected pattern: image_{{uuid}}_{{defid}}_{{variant}}.ext")
+        return {"status": "error", "input_file": input_file, "output_file": None, "error": "Invalid filename format"}
+    
+    uuid = image_match.group(1)
+    def_id = image_match.group(2)
+    variant = int(image_match.group(3))
+    first_letter = uuid[0].lower()
+    
+    logger.debug(f"[encode_image] Parsed: uuid={uuid}, def_id={def_id}, variant={variant}, first_letter={first_letter}")
+    
+    # Use the provided input file directly
+    raw_path = input_file
+    
+    if not os.path.exists(raw_path):
+        logger.warning(f"[encode_image] Input file not found: {raw_path}")
         return {"status": "not_found", "input_file": input_file, "output_file": None}
     
-    if os.path.exists(low_path):
-        logger.info(f"[encode_image] Output file already exists: {low_path}")
-        return {"status": "skipped", "input_file": input_file, "output_file": low_path}
+    # Create output directory: temp/{first_letter}/image/
+    temp_dir = os.path.join(output_dir, first_letter, "image")
+    os.makedirs(temp_dir, exist_ok=True)
+    logger.debug(f"[encode_image] temp_dir={temp_dir}")
+    
+    # Output filename without variant number
+    output_filename = f"image_{uuid}_{def_id}.heif"
+    output_path = os.path.join(temp_dir, output_filename)
+    logger.debug(f"[encode_image] output_path={output_path}")
+    
+    if os.path.exists(output_path):
+        logger.debug(f"[encode_image] Output file already exists: {output_path}")
+        return {"status": "skipped", "input_file": input_file, "output_file": output_path}
     
     try:
-        subprocess.run(
+        logger.debug(f"[encode_image] Running ImageMagick: magick {raw_path} -resize 512x768! -quality {quality} {output_path}")
+        result = subprocess.run(
             [
                 "magick",
                 raw_path,
                 "-resize", "512x768\!",
                 "-quality", str(quality),
-                low_path,
+                output_path,
             ],
             check=True,
             capture_output=True
         )
-        logger.info(f"[encode_image] ✓ Encoded image: {raw_path} -> {low_path}")
-        return {"status": "success", "input_file": input_file, "output_file": low_path}
+        logger.debug(f"[encode_image] ✓ Encoded image: {raw_path} -> {output_path}")
+        logger.debug(f"[encode_image] Output file exists: {os.path.exists(output_path)}")
+        return {"status": "success", "input_file": input_file, "output_file": output_path}
     except subprocess.CalledProcessError as e:
-        logger.error(f"ImageMagick error encoding {raw_path}: {e.stderr}")
+        logger.error(f"[encode_image] ImageMagick error encoding {raw_path}")
+        logger.error(f"[encode_image] stderr: {e.stderr.decode() if e.stderr else 'none'}")
+        logger.error(f"[encode_image] stdout: {e.stdout.decode() if e.stdout else 'none'}")
         return {"status": "error", "input_file": input_file, "output_file": None, "error": str(e)}
 
 
@@ -160,23 +235,36 @@ def add_file_to_package(
     Returns:
         Package ID (e.g., 'a0') or None if failed
     """
-    logger.info(f"[add_file_to_package] Attempting to add: {filename}")
-    logger.info(f"[add_file_to_package] File exists: {os.path.exists(filename)}")
-    logger.info(f"[add_file_to_package] Package dir: {package_dir}")
+    logger.debug(f"[add_file_to_package] Attempting to add: {filename}")
+    logger.debug(f"[add_file_to_package] File exists: {os.path.exists(filename)}")
+    logger.debug(f"[add_file_to_package] Package dir: {package_dir}")
     
     if not os.path.exists(filename):
         logger.warning(f"[add_file_to_package] File not found: {filename}")
         return None
     
-    # Extract first letter for package naming
-    path_re = r"low_(?:image|word|shortdef)_([a-z0-9])"
+    # Extract first letter from UUID in filename
+    # Format: temp/{letter}/{assetgroup}/{assettype}_{uuid}_...{ext}
+    path_re = r"(?:image|word|shortdef)_([a-f0-9])[a-f0-9\-]+"
     match = re.search(path_re, filename)
     if match:
         first_letter = match.group(1)
     else:
-        first_letter = os.path.basename(filename)[0]
+        # Fallback: try to extract from path
+        if '/temp/' in filename:
+            parts = filename.split('/temp/')
+            if len(parts) > 1:
+                temp_parts = parts[1].split('/')
+                if temp_parts:
+                    first_letter = temp_parts[0]
+                else:
+                    first_letter = os.path.basename(filename)[0]
+            else:
+                first_letter = os.path.basename(filename)[0]
+        else:
+            first_letter = os.path.basename(filename)[0]
     
-    logger.info(f"[add_file_to_package] Extracted letter: {first_letter}")
+    logger.debug(f"[add_file_to_package] Extracted letter: {first_letter}")
     
     # Find or create appropriate package
     package_id = 0
@@ -184,11 +272,11 @@ def add_file_to_package(
     
     while True:
         package_file = os.path.join(package_dir, f"package_{first_letter}{package_id}.zip")
-        logger.info(f"[add_file_to_package] Trying package: {package_file}")
+        logger.debug(f"[add_file_to_package] Trying package: {package_file}")
         
         if os.path.exists(package_file):
             size = os.path.getsize(package_file)
-            logger.info(f"[add_file_to_package] Package exists, size: {size} bytes (max: {max_size})")
+            logger.debug(f"[add_file_to_package] Package exists, size: {size} bytes (max: {max_size})")
             if size > max_size:
                 package_id += 1
                 continue
@@ -197,11 +285,11 @@ def add_file_to_package(
             with ZipFile(package_file, "a") as package:
                 arcname = os.path.basename(filename)
                 if arcname in package.namelist():
-                    logger.info(f"[add_file_to_package] {arcname} already exists in {package_file}")
+                    logger.debug(f"[add_file_to_package] {arcname} already exists in {package_file}")
                     return f"{first_letter}{package_id}"
                 
                 package.write(filename, arcname=arcname)
-                logger.info(f"[add_file_to_package] ✓ Stored {arcname} into package_{first_letter}{package_id}.zip")
+                logger.debug(f"[add_file_to_package] ✓ Stored {arcname} into package_{first_letter}{package_id}.zip")
                 return f"{first_letter}{package_id}"
         except Exception as e:
             logger.error(f"Error adding {filename} to package: {e}")

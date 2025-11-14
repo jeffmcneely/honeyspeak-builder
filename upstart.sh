@@ -407,15 +407,71 @@ for arg in "$@"; do
     fi
 done
 
-case "${ARGS[0]:-}" in
+case "${ARGS[0]:-all}" in
     build)
+        # Build and push Docker image only
         build_image
         ;;
     deploy)
+        # Restart all containers
+        CURRENT_STEP=0
+        TOTAL_STEPS=1
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}║${NC}        ${GREEN}Restarting All Deployments${NC}                       ${CYAN}║${NC}"
+            echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+        else
+            echo -e "${GREEN}Restarting All Deployments${NC}"
+        fi
+
+        print_step $TOTAL_STEPS "Restarting All Deployments"
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            echo -n "  Restarting all deployments... "
+        fi
+        
+        if kubectl rollout restart deployment -n honeyspeak > /dev/null 2>&1; then
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${GREEN}✓${NC}"
+                print_success "All deployments restarted"
+            fi
+        else
+            if [ "$QUIET_MODE" = false ]; then
+                echo -e "${RED}✗${NC}"
+            fi
+            print_error "Failed to restart deployments"
+        fi
+        
+        if [ "$QUIET_MODE" = false ]; then
+            echo ""
+            print_info "Current pod status:"
+            echo ""
+            kubectl get pods -n honeyspeak --no-headers | while read line; do
+                echo "  $line"
+            done
+            
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${GREEN}✓ Restart Complete!${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+        else
+            echo -e "${GREEN}✓ Restart complete${NC}"
+        fi
+        ;;
+    all)
+        # Build and deploy all containers
+        build_image
         deploy_to_kubernetes
         ;;
-    deploy-app)
-        # Restart celery and flask deployments only
+    app)
+        # Build and restart celery and flask deployments only
+        build_image
+        
         CURRENT_STEP=0
         TOTAL_STEPS=1
         
@@ -485,19 +541,14 @@ case "${ARGS[0]:-}" in
             echo -e "${GREEN}✓ Restart complete${NC}"
         fi
         ;;
-    "")
-        # No arguments - build and deploy
-        build_image
-        deploy_to_kubernetes
-        ;;
     help|--help|-h)
         echo "Usage: $0 [command] [options]"
         echo ""
         echo "Commands:"
-        echo "  (no args)  Build Docker image and deploy to Kubernetes"
+        echo "  all        Build and deploy all containers (Helm upgrade + rollout restart) [default]"
         echo "  build      Build and push Docker image only"
-        echo "  deploy     Deploy to Kubernetes (Helm upgrade + rollout restart)"
-        echo "  deploy-app Restart celery and flask deployments only (no build or Helm upgrade)"
+        echo "  deploy     Restart all containers"
+        echo "  app        Build and restart celery and flask containers only"
         echo "  help       Show this help message"
         echo ""
         echo "Options:"
@@ -505,12 +556,13 @@ case "${ARGS[0]:-}" in
         echo "  --no-context     Skip Docker context switching (use current context)"
         echo ""
         echo "Examples:"
-        echo "  $0                      # Build and deploy with normal output"
-        echo "  $0 --quiet             # Build and deploy with minimal output"
+        echo "  $0                     # Build and deploy everything (default: all)"
+        echo "  $0 all                 # Build and deploy everything (explicit)"
+        echo "  $0 build               # Build and push image only"
+        echo "  $0 deploy              # Restart all containers"
+        echo "  $0 app                 # Build and restart flask/celery"
         echo "  $0 build -q            # Build only with minimal output"
         echo "  $0 build --no-context  # Build without switching Docker context"
-        echo "  $0 deploy --quiet      # Deploy only with minimal output"
-        echo "  $0 deploy-app          # Restart celery and flask deployments"
         echo ""
         exit 0
         ;;
@@ -518,6 +570,7 @@ case "${ARGS[0]:-}" in
         echo -e "${RED}Error: Unknown command '${ARGS[0]}'${NC}"
         echo ""
         echo "Usage: $0 [command] [options]"
+        echo "Commands: build | deploy | all | app | help"
         echo "Try '$0 help' for more information."
         echo ""
         exit 1
