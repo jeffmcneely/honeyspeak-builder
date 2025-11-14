@@ -1473,5 +1473,96 @@ def export_database_tables(
         }
 
 
+@app.task(base=LoggingTask, bind=True)
+def rename_image_variant(self, asset_dir: str, uuid: str, def_id: int) -> Dict:
+    """
+    Rename image variant 1 to variant 0 after a delay.
+    Used when variant 0 is deleted - promotes variant 1 to primary.
+    Fails silently if variant 1 does not exist.
+    
+    Args:
+        asset_dir: Directory containing image assets
+        uuid: Word UUID
+        def_id: Definition ID
+    
+    Returns:
+        Dict with rename results
+    """
+    logger.info(f"Attempting to rename image variant 1 to 0: {uuid}_{def_id}")
+    
+    try:
+        import redis as redis_module
+        
+        # Setup Redis for cache updates
+        redis_client = None
+        try:
+            broker_url = os.getenv("CELERY_BROKER_URL")
+            if broker_url and broker_url.startswith("redis://"):
+                redis_client = redis_module.from_url(broker_url, decode_responses=True)
+            else:
+                redis_client = redis_module.Redis(
+                    host=os.getenv("REDIS_HOST", "localhost"),
+                    port=int(os.getenv("REDIS_PORT", "6379")),
+                    db=int(os.getenv("REDIS_DB", "0")),
+                    decode_responses=True
+                )
+            redis_client.ping()
+        except Exception as e:
+            logger.warning(f"Redis not available for cache updates: {e}")
+            redis_client = None
+        
+        # Try all allowed extensions
+        allowed_exts = [".png", ".jpg", ".heic"]
+        renamed = False
+        
+        for ext in allowed_exts:
+            variant_1_name = f"image_{uuid}_{def_id}_1{ext}"
+            variant_0_name = f"image_{uuid}_{def_id}_0{ext}"
+            
+            variant_1_path = Path(asset_dir) / variant_1_name
+            variant_0_path = Path(asset_dir) / variant_0_name
+            
+            if variant_1_path.exists():
+                # Rename variant 1 to variant 0
+                variant_1_path.rename(variant_0_path)
+                logger.info(f"Renamed {variant_1_name} to {variant_0_name}")
+                
+                # Update Redis cache
+                if redis_client:
+                    try:
+                        redis_client.srem("moderator:images:all", variant_1_name)
+                        redis_client.sadd("moderator:images:all", variant_0_name)
+                        logger.debug(f"Updated Redis cache: removed {variant_1_name}, added {variant_0_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to update Redis cache: {e}")
+                
+                renamed = True
+                break
+        
+        if not renamed:
+            logger.info(f"No variant 1 found for {uuid}_{def_id} (silent failure as expected)")
+            return {
+                "status": "skipped",
+                "message": "Variant 1 does not exist"
+            }
+        
+        return {
+            "status": "success",
+            "renamed_from": variant_1_name,
+            "renamed_to": variant_0_name
+        }
+        
+    except Exception as e:
+        logger.error(f"Error renaming image variant: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Fail silently - return success status to avoid alerting
+        return {
+            "status": "error",
+            "error": str(e),
+            "silent_failure": True
+        }
+
+
 # Expose celery app for CLI
 celery_app = app

@@ -460,6 +460,10 @@ def delete_asset(filename: str):
         return jsonify({"ok": False, "missing": True}), 404
 
     try:
+        # Check if this is a variant 0 image before deletion
+        # Pattern: image_{uuid}_{def_id}_0.{ext}
+        variant_0_match = re.match(r"^image_([0-9a-fA-F\-]+)_(\d+)_0\.(?:png|jpg|heic)$", filename)
+        
         # Remove from Redis cache FIRST (assume cache is correct)
         redis = get_redis_client()
         if redis:
@@ -476,6 +480,25 @@ def delete_asset(filename: str):
         
         if DEBUG_TIMING:
             print(f"[TIMING] delete_asset: deleted file '{filename}'")
+        
+        # If variant 0 was deleted, queue task to rename variant 1 to variant 0 after 30 seconds
+        if variant_0_match:
+            uuid = variant_0_match.group(1)
+            def_id = int(variant_0_match.group(2))
+            
+            try:
+                from scripts.celery_tasks import rename_image_variant
+                # Queue task with 30 second countdown
+                task = rename_image_variant.apply_async(
+                    args=(asset_dir, uuid, def_id),
+                    countdown=30
+                )
+                if DEBUG_TIMING:
+                    print(f"[TIMING] delete_asset: queued rename task {task.id} for {uuid}_{def_id} (30s delay)")
+            except Exception as e:
+                # Fail silently - don't block the delete operation
+                if DEBUG_TIMING:
+                    print(f"[TIMING] delete_asset: failed to queue rename task: {e}")
         
         return jsonify({"ok": True})
     except Exception as e:
