@@ -55,4 +55,182 @@
         </div>
     </div>
 </div>
+
+<!-- Package Results Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Package Results</h5>
+            </div>
+            <div class="card-body">
+                <div id="package-results-container">
+                    <p class="text-muted">No packaging results available yet. Results will appear here after packaging completes.</p>
+                </div>
+                
+                <!-- Individual Package Results -->
+                <div id="individual-results-section" style="display: none;" class="mt-4">
+                    <h6>Individual Package Results</h6>
+                    <div class="mb-2">
+                        <span class="me-2">Select letter:</span>
+                        <div class="btn-group" role="group" aria-label="Letter selection">
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="0">0</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="1">1</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="2">2</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="3">3</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="4">4</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="5">5</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="6">6</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="7">7</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="8">8</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="9">9</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="a">A</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="b">B</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="c">C</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="d">D</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="e">E</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary letter-btn" data-letter="f">F</button>
+                        </div>
+                    </div>
+                    <div id="letter-results-container" class="mt-3">
+                        <p class="text-muted">Click a letter to view its packaging results.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(function() {
+    // Load package results on page load
+    loadPackageResults();
+    
+    // Auto-refresh every 10 seconds if results aren't loaded yet
+    var refreshInterval = setInterval(function() {
+        if ($('#package-results-container p.text-muted').length > 0) {
+            loadPackageResults();
+        } else {
+            clearInterval(refreshInterval);
+        }
+    }, 10000);
+    
+    // Letter button click handler
+    $('.letter-btn').click(function() {
+        var letter = $(this).data('letter');
+        loadLetterResults(letter);
+        $('.letter-btn').removeClass('active');
+        $(this).addClass('active');
+    });
+});
+
+function loadPackageResults() {
+    $.get('/api/package_results', function(data) {
+        if (data.status === 'not_found') {
+            return; // Keep default message
+        }
+        
+        if (data.status === 'error') {
+            $('#package-results-container').html(
+                '<div class="alert alert-danger">Error loading results: ' + data.error + '</div>'
+            );
+            return;
+        }
+        
+        // Display aggregate results
+        var html = '<div class="alert alert-success"><strong>Packaging Complete!</strong></div>';
+        
+        html += '<div class="row">';
+        html += '<div class="col-md-6">';
+        html += '<h6>Summary</h6>';
+        html += '<table class="table table-sm">';
+        html += '<tr><th>Total Time:</th><td>' + formatTime(data.total_time_seconds) + '</td></tr>';
+        html += '<tr><th>Tasks Completed:</th><td>' + data.aggregate_results.tasks_completed + ' / ' + data.letter_groups.length + '</td></tr>';
+        if (data.aggregate_results.tasks_failed > 0) {
+            html += '<tr><th>Tasks Failed:</th><td class="text-danger">' + data.aggregate_results.tasks_failed + '</td></tr>';
+        }
+        html += '</table>';
+        html += '</div>';
+        
+        html += '<div class="col-md-6">';
+        html += '<h6>Files Processed</h6>';
+        html += '<table class="table table-sm">';
+        html += '<tr><th>Total Files:</th><td>' + data.aggregate_results.total_files + '</td></tr>';
+        html += '<tr><th>Audio Encoded:</th><td>' + data.aggregate_results.audio_encoded + '</td></tr>';
+        html += '<tr><th>Images Encoded:</th><td>' + data.aggregate_results.images_encoded + '</td></tr>';
+        html += '<tr><th>Files Packaged:</th><td>' + data.aggregate_results.files_packaged + '</td></tr>';
+        html += '<tr><th>Files Skipped:</th><td>' + data.aggregate_results.files_skipped + '</td></tr>';
+        if (data.aggregate_results.audio_failed > 0 || data.aggregate_results.images_failed > 0) {
+            html += '<tr><th>Failed:</th><td class="text-danger">Audio: ' + data.aggregate_results.audio_failed + 
+                    ', Images: ' + data.aggregate_results.images_failed + '</td></tr>';
+        }
+        html += '</table>';
+        html += '</div>';
+        html += '</div>';
+        
+        $('#package-results-container').html(html);
+        $('#individual-results-section').show();
+    }).fail(function() {
+        // Keep default message on failure
+    });
+}
+
+function loadLetterResults(letter) {
+    $('#letter-results-container').html('<p class="text-muted">Loading results for letter "' + String(letter).toUpperCase() + '"...</p>');
+    
+    $.get('/api/package_results/' + letter, function(data) {
+        if (data.status === 'not_found') {
+            $('#letter-results-container').html(
+                '<div class="alert alert-warning">No results found for letter "' + String(letter).toUpperCase() + '"</div>'
+            );
+            return;
+        }
+        
+        if (data.status === 'error') {
+            $('#letter-results-container').html(
+                '<div class="alert alert-danger">Error loading results: ' + data.error + '</div>'
+            );
+            return;
+        }
+        
+        // Display letter-specific results
+        var html = '<div class="card">';
+        html += '<div class="card-header"><strong>Results for Letter: ' + String(letter).toUpperCase() + '</strong></div>';
+        html += '<div class="card-body">';
+        html += '<table class="table table-sm">';
+        html += '<tr><th>Total Files:</th><td>' + data.total_files + '</td></tr>';
+        html += '<tr><th>Audio Encoded:</th><td>' + data.audio_encoded + '</td></tr>';
+        html += '<tr><th>Audio Failed:</th><td>' + (data.audio_failed > 0 ? '<span class="text-danger">' + data.audio_failed + '</span>' : data.audio_failed) + '</td></tr>';
+        html += '<tr><th>Images Encoded:</th><td>' + data.images_encoded + '</td></tr>';
+        html += '<tr><th>Images Failed:</th><td>' + (data.images_failed > 0 ? '<span class="text-danger">' + data.images_failed + '</span>' : data.images_failed) + '</td></tr>';
+        html += '<tr><th>Files Packaged:</th><td>' + data.files_packaged + '</td></tr>';
+        html += '<tr><th>Files Skipped:</th><td>' + data.files_skipped + '</td></tr>';
+        html += '</table>';
+        html += '</div>';
+        html += '</div>';
+        
+        $('#letter-results-container').html(html);
+    }).fail(function() {
+        $('#letter-results-container').html(
+            '<div class="alert alert-danger">Failed to load results for letter "' + String(letter).toUpperCase() + '"</div>'
+        );
+    });
+}
+
+function formatTime(seconds) {
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return hours + 'h ' + minutes + 'm ' + secs + 's';
+    } else if (minutes > 0) {
+        return minutes + 'm ' + secs + 's';
+    } else {
+        return secs + 's';
+    }
+}
+</script>
+
 {% endblock %}

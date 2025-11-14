@@ -718,6 +718,40 @@ def build_package():
     backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
     return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
 
+@app.route("/api/package_results")
+def get_package_results():
+    """Get the overall package results from package_result.json"""
+    import json
+    result_file = Path(ASSET_DIR) / "package_result.json"
+    if not result_file.exists():
+        return jsonify({"status": "not_found", "message": "No package results found"})
+    
+    try:
+        with open(result_file, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/package_results/<letter>")
+def get_package_letter_results(letter):
+    """Get individual letter package results from {letter}.json"""
+    import json
+    # Validate letter is in valid set
+    if letter not in "abcdef0123456789":
+        return jsonify({"status": "error", "error": "Invalid letter"}), 400
+    
+    result_file = Path(ASSET_DIR) / f"{letter}.json"
+    if not result_file.exists():
+        return jsonify({"status": "not_found", "message": f"No results found for letter '{letter}'"})
+    
+    try:
+        with open(result_file, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 @app.route("/download")
 def download():
     db_files = list_db_files()

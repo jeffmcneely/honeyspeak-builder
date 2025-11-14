@@ -605,6 +605,11 @@ def package_asset_group(
     
     # Temp output directory for encoded files
     temp_output_dir = os.path.join(asset_dir, "temp")
+    # Ensure temp/{letter}/audio and temp/{letter}/image directories exist
+    temp_audio_dir = os.path.join(temp_output_dir, letter, "audio")
+    temp_image_dir = os.path.join(temp_output_dir, letter, "image")
+    os.makedirs(temp_audio_dir, exist_ok=True)
+    os.makedirs(temp_image_dir, exist_ok=True)
     
     for i, (asset_type, filepath) in enumerate(files_to_process):
         filename = os.path.basename(filepath)
@@ -626,7 +631,7 @@ def package_asset_group(
                     results["audio_failed"] += 1
                     continue
             else:
-                # shortdef_{uuid}_{def_id}_{variant}.aac
+                # Accept both shortdef_{uuid}_{def_id}_{variant}.aac and shortdef_{uuid}_{id}.aac
                 match = re.match(r"shortdef_([a-f0-9-]+)_(\d+)_(\d+)\.aac", filename)
                 if match:
                     uuid = match.group(1)
@@ -634,9 +639,17 @@ def package_asset_group(
                     defn_id = int(match.group(2))
                     variant = int(match.group(3))
                 else:
-                    logger.warning(f"Failed to parse shortdef audio filename: {filename}")
-                    results["audio_failed"] += 1
-                    continue
+                    # Try shortdef_{uuid}_{id}.aac (no variant)
+                    match2 = re.match(r"shortdef_([a-f0-9-]+)_(\d+)\.aac", filename)
+                    if match2:
+                        uuid = match2.group(1)
+                        assetgroup = "shortdef"
+                        defn_id = int(match2.group(2))
+                        variant = 0
+                    else:
+                        logger.warning(f"Failed to parse shortdef audio filename: {filename}")
+                        results["audio_failed"] += 1
+                        continue
             
             # Call encode_and_package_audio
             logger.debug(f"Encoding audio: {filepath}")
@@ -655,6 +668,9 @@ def package_asset_group(
                 results["audio_encoded"] += 1
                 results["files_packaged"] += 1
                 logger.debug(f"Encoded and packaged {filename}")
+            elif result["status"] == "skipped":
+                results["files_skipped"] += 1
+                logger.debug(f"Skipped already-encoded audio {filename}")
             else:
                 results["audio_failed"] += 1
                 logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'unknown')}")
@@ -689,6 +705,9 @@ def package_asset_group(
                 results["images_encoded"] += 1
                 results["files_packaged"] += 1
                 logger.debug(f"Encoded and packaged {filename}")
+            elif result["status"] == "skipped":
+                results["files_skipped"] += 1
+                logger.debug(f"Skipped already-encoded image {filename}")
             else:
                 results["images_failed"] += 1
                 logger.warning(f"Failed to encode image {filename}: {result.get('error', 'unknown')}")
@@ -707,6 +726,21 @@ def package_asset_group(
             )
     
     logger.info(f"Packaging complete for '{letter}': {results}")
+    
+    # Save results to {letter}.json in asset_dir
+    try:
+        import json
+        result_file = os.path.join(asset_dir, f"{letter}.json")
+        final_result = {
+            "status": "success",
+            **results
+        }
+        with open(result_file, 'w') as f:
+            json.dump(final_result, f, indent=2)
+        logger.info(f"Saved results to {result_file}")
+    except Exception as e:
+        logger.warning(f"Failed to save results to JSON: {e}")
+    
     return {
         "status": "success",
         **results
@@ -757,10 +791,20 @@ def encode_and_package_audio(
     logger.debug(f"[encode_and_package_audio] Calling encode_audio_file with input_file={input_file}, output_dir={output_dir}")
     encode_result = encode_audio_file(input_file, output_dir, bitrate)
     logger.debug(f"[encode_and_package_audio] encode_result={encode_result}")
-    
-    if encode_result["status"] != "success":
+
+    # Extra debugging for skipped or failed encoding
+    if encode_result["status"] not in ["success", "skipped"]:
         logger.warning(f"[encode_and_package_audio] Encoding failed: {encode_result}")
+        logger.debug(f"[encode_and_package_audio] input_file exists: {os.path.exists(input_file)} size: {os.path.getsize(input_file) if os.path.exists(input_file) else 'N/A'}")
+        output_file = encode_result.get("output_file")
+        if output_file:
+            logger.debug(f"[encode_and_package_audio] output_file exists: {os.path.exists(output_file)} size: {os.path.getsize(output_file) if os.path.exists(output_file) else 'N/A'}")
+        logger.debug(f"[encode_and_package_audio] Parameters: input_file={input_file}, output_dir={output_dir}, bitrate={bitrate}")
         return encode_result
+    
+    # If skipped, log that we're continuing to package the existing file
+    if encode_result["status"] == "skipped":
+        logger.debug(f"[encode_and_package_audio] File already encoded, continuing to package: {encode_result['output_file']}")
     
     # Package
     logger.debug(f"[encode_and_package_audio] Calling add_file_to_package with file={encode_result['output_file']}")
@@ -829,9 +873,19 @@ def encode_and_package_image(
     encode_result = encode_image_file(input_file, output_dir, quality)
     logger.debug(f"[encode_and_package_image] encode_result={encode_result}")
     
-    if encode_result["status"] != "success":
+    # Extra debugging for skipped or failed encoding
+    if encode_result["status"] not in ["success", "skipped"]:
         logger.warning(f"[encode_and_package_image] Encoding failed: {encode_result}")
+        logger.debug(f"[encode_and_package_image] input_file exists: {os.path.exists(input_file)} size: {os.path.getsize(input_file) if os.path.exists(input_file) else 'N/A'}")
+        output_file = encode_result.get("output_file")
+        if output_file:
+            logger.debug(f"[encode_and_package_image] output_file exists: {os.path.exists(output_file)} size: {os.path.getsize(output_file) if os.path.exists(output_file) else 'N/A'}")
+        logger.debug(f"[encode_and_package_image] Parameters: input_file={input_file}, output_dir={output_dir}, quality={quality}")
         return encode_result
+    
+    # If skipped, log that we're continuing to package the existing file
+    if encode_result["status"] == "skipped":
+        logger.debug(f"[encode_and_package_image] File already encoded, continuing to package: {encode_result['output_file']}")
     
     # Package
     logger.debug(f"[encode_and_package_image] Calling add_file_to_package with file={encode_result['output_file']}")
@@ -1085,13 +1139,18 @@ def package_all_assets(
 ) -> Dict:
     """
     Package all assets by launching 16 parallel tasks for letter groups [a-f, 0-9].
+    Waits for all tasks to complete, tracks timing, and saves aggregate results.
     Does NOT use external_assets table - that table is deprecated.
     
     Returns:
-        Dict with task IDs for each letter group
+        Dict with task IDs for each letter group and aggregate results
     """
     import glob
+    import json
+    import time
+    from celery.result import AsyncResult
     
+    start_time = time.time()
     logger.info("Starting parallel asset packaging for all letter groups")
     
     # Clean package directory - remove all existing package files
@@ -1117,13 +1176,88 @@ def package_all_assets(
         tasks[letter] = task.id
         logger.info(f"Launched task for letter '{letter}': {task.id}")
     
-    logger.info(f"All {len(letter_groups)} packaging tasks launched")
+    logger.info(f"All {len(letter_groups)} packaging tasks launched, waiting for completion...")
+    
+    # Wait for all tasks to complete and collect results
+    aggregate_results = {
+        "total_files": 0,
+        "audio_encoded": 0,
+        "audio_failed": 0,
+        "images_encoded": 0,
+        "images_failed": 0,
+        "files_packaged": 0,
+        "files_skipped": 0,
+        "tasks_completed": 0,
+        "tasks_failed": 0
+    }
+    
+    task_results = {}
+    
+    for letter, task_id in tasks.items():
+        try:
+            result = AsyncResult(task_id, app=app)
+            # Wait for task to complete (timeout after 1 hour)
+            task_result = result.get(timeout=3600)
+            
+            if task_result.get("status") == "success":
+                aggregate_results["tasks_completed"] += 1
+                aggregate_results["total_files"] += task_result.get("total_files", 0)
+                aggregate_results["audio_encoded"] += task_result.get("audio_encoded", 0)
+                aggregate_results["audio_failed"] += task_result.get("audio_failed", 0)
+                aggregate_results["images_encoded"] += task_result.get("images_encoded", 0)
+                aggregate_results["images_failed"] += task_result.get("images_failed", 0)
+                aggregate_results["files_packaged"] += task_result.get("files_packaged", 0)
+                aggregate_results["files_skipped"] += task_result.get("files_skipped", 0)
+            else:
+                aggregate_results["tasks_failed"] += 1
+            
+            task_results[letter] = {
+                "task_id": task_id,
+                "status": task_result.get("status", "unknown"),
+                "result": task_result
+            }
+            
+            logger.info(f"Task for letter '{letter}' completed: {task_result.get('status')}")
+        except Exception as e:
+            aggregate_results["tasks_failed"] += 1
+            task_results[letter] = {
+                "task_id": task_id,
+                "status": "error",
+                "error": str(e)
+            }
+            logger.error(f"Task for letter '{letter}' failed: {e}")
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    
+    logger.info(f"All packaging tasks completed in {total_time:.2f} seconds")
+    logger.info(f"Aggregate results: {aggregate_results}")
+    
+    # Save aggregate results to package_result.json
+    try:
+        result_file = os.path.join(asset_dir, "package_result.json")
+        final_result = {
+            "status": "success",
+            "start_time": start_time,
+            "end_time": end_time,
+            "total_time_seconds": total_time,
+            "letter_groups": letter_groups,
+            "aggregate_results": aggregate_results,
+            "task_results": task_results
+        }
+        with open(result_file, 'w') as f:
+            json.dump(final_result, f, indent=2)
+        logger.info(f"Saved aggregate results to {result_file}")
+    except Exception as e:
+        logger.error(f"Failed to save aggregate results to JSON: {e}")
     
     return {
         "status": "success",
-        "message": f"Launched {len(letter_groups)} parallel packaging tasks",
+        "message": f"Completed {len(letter_groups)} packaging tasks in {total_time:.2f}s",
+        "total_time_seconds": total_time,
         "letter_groups": letter_groups,
-        "tasks": tasks
+        "tasks": tasks,
+        "aggregate_results": aggregate_results
     }
 
 

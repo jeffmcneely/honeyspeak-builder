@@ -52,7 +52,8 @@ def encode_audio_file(
     # Format: word_{uuid}_{variant}.ext or shortdef_{uuid}_{defid}_{variant}.ext
     word_match = re.match(r'(word)_([a-f0-9\-]+)_(\d+)', base_name)
     shortdef_match = re.match(r'(shortdef)_([a-f0-9\-]+)_(\d+)_(\d+)', base_name)
-    
+    shortdef_simple_match = re.match(r'(shortdef)_([a-f0-9\-]+)_(\d+)', base_name)
+
     if word_match:
         assetgroup = 'word'
         uuid = word_match.group(2)
@@ -63,9 +64,14 @@ def encode_audio_file(
         uuid = shortdef_match.group(2)
         def_id = shortdef_match.group(3)
         variant = int(shortdef_match.group(4))
+    elif shortdef_simple_match:
+        assetgroup = 'shortdef'
+        uuid = shortdef_simple_match.group(2)
+        def_id = shortdef_simple_match.group(3)
+        variant = 0
     else:
         logger.error(f"[encode_audio] Cannot parse filename: {basename}")
-        logger.error(f"[encode_audio] Expected pattern: word_{{uuid}}_{{variant}}.ext or shortdef_{{uuid}}_{{defid}}_{{variant}}.ext")
+        logger.error(f"[encode_audio] Expected pattern: word_{{uuid}}_{{variant}}.ext or shortdef_{{uuid}}_{{defid}}_{{variant}}.ext or shortdef_{{uuid}}_{{id}}.ext")
         return {"status": "error", "input_file": input_file, "output_file": None, "error": "Invalid filename format"}
     
     first_letter = uuid[0].lower()
