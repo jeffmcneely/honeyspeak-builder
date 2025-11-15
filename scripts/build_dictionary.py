@@ -1,3 +1,23 @@
+# =====================================================================
+# ⚠️  DEPRECATED SCRIPT - DO NOT USE
+# =====================================================================
+# This CLI script is deprecated and should not be used.
+# Use the Flask web service instead: http://localhost:5002/build_dictionary
+#
+# Replacement:
+#   - Web interface: Navigate to /build_dictionary and upload word list
+#   - API endpoint: POST to /build_dictionary/single with JSON
+#   - Celery task: fetch_and_process_word(word, function_label, level, ...)
+#
+# Why deprecated:
+#   - No concurrent processing (slow for large word lists)
+#   - No progress monitoring or web interface
+#   - Cannot be paused/resumed
+#   - All functionality is now in Flask API + Celery tasks
+#
+# See DEPRECATED_SCRIPTS.md for migration guide.
+# =====================================================================
+
 from libs.dictionary import Dictionary
 from libs.sqlite_dictionary import Flags  # Keep Flags import from sqlite_dictionary
 

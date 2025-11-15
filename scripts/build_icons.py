@@ -1,3 +1,20 @@
+# =====================================================================
+# ⚠️  DEPRECATED SCRIPT - NOT INTEGRATED
+# =====================================================================
+# This CLI script is not integrated into the Flask/Celery web service.
+# 
+# Status: Standalone utility for icon generation using ImageMagick
+#
+# Options:
+#   1. Integrate into web service as /build_icons route + Celery task
+#   2. Keep as standalone utility if rarely used
+#
+# This script generates icons with different backgrounds and sizes
+# from high-res images in assets_hires directory.
+#
+# See DEPRECATED_SCRIPTS.md for more information.
+# =====================================================================
+
 import os
 import subprocess
 

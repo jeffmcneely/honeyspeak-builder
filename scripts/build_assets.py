@@ -1,3 +1,26 @@
+# =====================================================================
+# ⚠️  DEPRECATED SCRIPT - DO NOT USE
+# =====================================================================
+# This CLI script is deprecated and should not be used.
+# Use the Flask web service instead: http://localhost:5002/build_assets
+#
+# Replacement:
+#   - Web interface: Navigate to /build_assets
+#   - Select asset types (word audio, definition audio, images)
+#   - Choose models/voices from dropdown menus
+#   - Tasks automatically enqueued to Celery workers
+#
+# Why deprecated:
+#   - No web-based progress monitoring
+#   - Harder to configure via command line
+#   - All functionality is now in Flask API + Celery tasks:
+#     * generate_word_audio_task
+#     * generate_definition_audio_task
+#     * generate_definition_image_task
+#
+# See DEPRECATED_SCRIPTS.md for migration guide.
+# =====================================================================
+
 import argparse
 from argparse import Namespace
 import os

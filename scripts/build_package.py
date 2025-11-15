@@ -1,3 +1,29 @@
+# =====================================================================
+# ⚠️  DEPRECATED SCRIPT - DO NOT USE
+# =====================================================================
+# This CLI script is deprecated and should not be used.
+# Use the Flask web service instead: http://localhost:5002/build_package
+#
+# Replacement:
+#   - Web interface: Navigate to /build_package
+#   - Click "Start Packaging" button
+#   - Tasks automatically transcode/downscale assets (ffmpeg/ImageMagick)
+#   - Creates zip packages via 16 parallel Celery tasks [a-f, 0-9]
+#   - Download SQLite DB + packages from /download page
+#
+# Why deprecated:
+#   - Processes assets sequentially (slow for large databases)
+#   - No parallel encoding/packaging
+#   - No web-based download interface
+#   - All functionality is now in Flask API + Celery tasks:
+#     * package_all_assets: Orchestrates packaging
+#     * package_asset_group: Packages assets for specific letter
+#
+# NOTE: The external_assets table is also deprecated.
+#
+# See DEPRECATED_SCRIPTS.md for migration guide.
+# =====================================================================
+
 import os
 import subprocess
 import shutil
@@ -11,18 +37,6 @@ import re
 
 # Load environment variables from .env file
 load_dotenv()
-
-# ===================================================================
-# NOTE: This standalone script is DEPRECATED for packaging assets.
-# The external_assets table is deprecated.
-#
-# PREFERRED APPROACH: Use the Celery task system instead:
-#   - package_all_assets: Launches 16 parallel tasks for [a-f, 0-9]
-#   - package_asset_group: Processes all assets for a specific letter
-#
-# This script is kept for backwards compatibility but should not be
-# used for new workflows.
-# ===================================================================
 
 OUTDIR = "assets_hires"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB

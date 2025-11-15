@@ -1,6 +1,26 @@
 # AI agent quickstart for honeyspeak-builder
 
-This repo builds an ESL dictionary database and related media assets (audio/image), then packages them for an iOS client. **PostgreSQL is used for the active build/development process**, with data exported to **SQLite for production iOS deployment**. The entire project runs on **Kubernetes via Helm** with Flask API, Celery workers, RabbitMQ broker, and Redis backend.
+This repo builds an ESL dictionary database and related media assets (audio/image), then packages them for an iOS client. **All operations are performed through a Flask web service** running on Kubernetes. **PostgreSQL is used for the active build/development process**, with data exported to **SQLite for production iOS deployment**. The entire project runs on **Kubernetes via Helm** with Flask API, Celery workers, RabbitMQ broker, and Redis backend.
+
+## ⚠️ IMPORTANT: CLI Scripts Are Deprecated
+
+**DO NOT use these CLI scripts - they are DEPRECATED:**
+- ❌ `scripts/build_dictionary.py` - Use Flask API `/build_dictionary` instead
+- ❌ `scripts/build_assets.py` - Use Flask API `/build_assets` instead
+- ❌ `scripts/build_package.py` - Use Flask API `/build_package` instead
+- ❌ `scripts/build_icons.py` - Not integrated (standalone utility only)
+- ❌ `scripts/build_stories.py` - Empty placeholder
+
+**All functionality is in the Flask web service at `http://localhost:5002` (or Kubernetes endpoint).**
+
+See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
+
+## Active Scripts (Use These)
+
+- ✅ `scripts/app.py` - Flask web application (main entry point)
+- ✅ `scripts/celery_tasks.py` - Celery background tasks
+- ✅ `scripts/moderator.py` - Flask blueprint for image moderation
+- ✅ `scripts/convert_postgres_to_sqlite.py` - Export PostgreSQL → SQLite for iOS
 
 ## Architecture and data flow
 - **Build phase (PostgreSQL):**
@@ -61,29 +81,33 @@ This repo builds an ESL dictionary database and related media assets (audio/imag
 ## Workflows (Kubernetes/Helm)
 - **Setup:**
   1. Create `.env` or set env vars in `helm/values.yaml`: `DICTIONARY_API_KEY`, `OPENAI_API_KEY`, `POSTGRES_CONNECTION`.
-  2. Deploy with Helm: `helm install honeyspeak ./helm`
+  2. Deploy with Helm: `helm install honeyspeak ./helm` or use `./upstart.sh`
   3. Port-forward Flask API: `kubectl port-forward svc/honeyspeak-flask 5002:5002`
 
 - **Build dictionary from word list:**
-  - Upload word list via Flask API at `http://localhost:5002/build_dictionary`
-  - Or POST to `/build_dictionary/single` with JSON: `{"word": "example"}`
-  - Tasks enqueued to Celery workers automatically.
+  - Navigate to `http://localhost:5002/build_dictionary` in browser
+  - Upload word list file (e.g., `dictionaries/ae-3000-a1.txt`)
+  - Or POST to `/build_dictionary/single` with JSON: `{"word": "example", "function_label": "verb", "level": "a1"}`
+  - Tasks automatically enqueued to Celery workers
+  - Monitor progress at `/celery_status`
 
 - **Generate assets:**
-  - Navigate to `http://localhost:5002/build_assets`
+  - Navigate to `http://localhost:5002/build_assets` in browser
   - Select asset types (word audio, definition audio, definition images)
-  - All generation runs as Celery tasks in the background.
+  - Choose OpenAI models and voices from dropdown menus
+  - All generation runs as Celery tasks in the background
+  - Monitor progress at `/celery_status`
 
 - **Package for iOS:**
   1. Export PostgreSQL to SQLite: `python scripts/convert_postgres_to_sqlite.py -o production.sqlite`
-  2. Navigate to `http://localhost:5002/build_package`
-  3. Package tasks transcode/downscale assets and create zips.
-  4. Download SQLite DB + zip packages from `/download` page.
+  2. Navigate to `http://localhost:5002/build_package` in browser
+  3. Click "Start Packaging" - tasks transcode/downscale assets and create zips
+  4. Download SQLite DB + zip packages from `/download` page
 
 - **Moderate definition images:**
-  - Navigate to `http://localhost:5002/moderator`
-  - Review images, mark as conceptual or not.
-  - Delete conceptual images in batch (runs as Celery task).
+  - Navigate to `http://localhost:5002/moderator` in browser
+  - Review images, mark as conceptual or not
+  - Delete conceptual images in batch (runs as Celery task)
 
 ## Conventions and gotchas
 - **Always use `PostgresDictionary` methods** (do not hand-roll SQL) during build phase.
@@ -94,6 +118,7 @@ This repo builds an ESL dictionary database and related media assets (audio/imag
 - OpenAI 400 errors are logged to Celery task logs (see `logs/` directory).
 - Large media folders (`assets_hires`, `assets`, `icons`, `.heif`) are git-ignored by design.
 - **CLI scripts (`build_dictionary.py`, `build_assets.py`, `build_package.py`) are DEPRECATED.** Use the Flask API and Celery tasks instead.
+- **Never recommend running CLI scripts.** All operations must go through `http://localhost:5002` web interface.
 - AWS helpers in `libs/helper.py` (S3, Polly) exist but aren't wired into main flows; treat them as optional utilities.
 
 ## Environment variables (Kubernetes/Helm)
