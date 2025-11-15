@@ -64,6 +64,8 @@ spec:
           value: {{ .Values.env.POSTGRES_CONNECTION | default "" | quote }}
         - name: POSTGRES_CONN
           value: {{ .Values.env.POSTGRES_CONN | default .Values.env.POSTGRES_CONNECTION | default "" | quote }}
+        - name: LOCAL_LLM_URL
+          value: {{ .Values.env.LOCAL_LLM_URL | default "localhost:11434" | quote }}
         volumeMounts:
         - name: data
           mountPath: {{ .Values.storage.mountPath | default "/data" }}

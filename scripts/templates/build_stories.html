@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4" id="build_stories_container">
+    <h1 id="page_title">📖 Build Stories</h1>
+    
+    <div class="row" id="main_row">
+        <div class="col-md-8" id="main_column">
+            <div class="card mb-4" id="config_card">
+                <div class="card-body">
+                    <h5 class="card-title" id="config_title">Story Configuration</h5>
+                    
+                    <div class="row mb-3" id="config_row">
+                        <div class="col-md-4" id="model_col">
+                            <label for="llm_model" class="form-label" id="model_label">LLM Model</label>
+                            <select id="llm_model" class="form-select">
+                                <option value="llama3.1:8b-instruct-q5_K_M">llama3.1:8b-instruct-q5_K_M</option>
+                                <option value="qwen2.5-coder:7b-instruct">qwen2.5-coder:7b-instruct</option>
+                                <option value="qwen3:8b">qwen3:8b</option>
+                                <option value="mixtral:8x7b">mixtral:8x7b</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4" id="level_col">
+                            <label for="level" class="form-label" id="level_label">Level</label>
+                            <select id="level" class="form-select">
+                                <option value="a1" selected>A1 - Beginner</option>
+                                <option value="a2">A2 - Elementary</option>
+                                <option value="b1">B1 - Intermediate</option>
+                                <option value="b2">B2 - Upper Intermediate</option>
+                                <option value="c1">C1 - Advanced</option>
+                                <option value="c2">C2 - Proficient</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4" id="num_words_col">
+                            <label for="num_words" class="form-label" id="num_words_label">Words per Type</label>
+                            <input type="number" id="num_words" class="form-control" value="4" min="4" max="6">
+                            <small class="text-muted" id="num_words_help">Number of nouns and verbs</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4" id="max_attempts_col">
+                            <label for="max_attempts" class="form-label" id="max_attempts_label">Max Retry Attempts</label>
+                            <input type="number" id="max_attempts" class="form-control" value="3" min="1" max="10">
+                            <small class="text-muted" id="max_attempts_help">Retries if words are missing</small>
+                        </div>
+                    </div>
+                    
+                    <button id="choose_words_btn" class="btn btn-primary">
+                        <i class="bi bi-shuffle"></i> Choose Words
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card mb-4" id="word_cloud_card" style="display: none;">
+                <div class="card-body" id="word_cloud_body">
+                    <h5 class="card-title" id="selected_words_title">Selected Words</h5>
+                    
+                    <div class="mb-3" id="nouns_section">
+                        <h6 id="nouns_heading">Nouns</h6>
+                        <div id="noun_cloud" class="word-cloud">
+                            <!-- Noun tags will be inserted here -->
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="verbs_section">
+                        <h6 id="verbs_heading">Verbs</h6>
+                        <div id="verb_cloud" class="word-cloud">
+                            <!-- Verb tags will be inserted here -->
+                        </div>
+                    </div>
+                    
+                    <button id="generate_story_btn" class="btn btn-success">
+                        <i class="bi bi-magic"></i> Generate Story
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4" id="sidebar_column">
+            <div class="card" id="instructions_card">
+                <div class="card-body" id="instructions_body">
+                    <h5 class="card-title" id="instructions_title">Instructions</h5>
+                    <ol id="instructions_list">
+                        <li>Select an LLM model</li>
+                        <li>Choose a CEFR level (A1-C2)</li>
+                        <li>Set number of words per type</li>
+                        <li>Click "Choose Words" to generate word clouds</li>
+                        <li>Click X next to any word to replace it</li>
+                        <li>Click "Generate Story" to create a story using the selected words</li>
+                        <li>Review and approve the generated story</li>
+                    </ol>
+                    
+                    <div class="alert alert-info mt-3" id="instructions_note">
+                        <strong id="note_label">Note:</strong> The LLM will generate a story incorporating all selected nouns and verbs.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mb-4" id="story_output_card" style="display: none;">
+        <div class="card-body" id="story_output_body">
+            <h5 class="card-title" id="story_output_title">Generated Story</h5>
+            <span id="story_status" style="font-family: monospace; font-size: 14px; color: #666; display: none;"></span>
+            
+            <div id="story_loading" style="display: none;">
+                <div class="spinner-border text-primary" role="status" id="story_spinner">
+                    <span class="visually-hidden" id="spinner_text">Generating story...</span>
+                </div>
+                <span class="ms-2" id="loading_text">Generating story with LLM...</span>
+            </div>
+            
+            <textarea id="story_output" class="form-control" rows="12" style="font-family: monospace;"></textarea>
+            
+            <button id="approve_btn" class="btn btn-primary mt-3" style="display: none;">
+                <i class="bi bi-check-circle"></i> Approve Story
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.word-cloud {
+    min-height: 60px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.word-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    background-color: #0d6efd;
+    color: white;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+.word-tag .remove-word {
+    margin-left: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.word-tag .remove-word:hover {
+    opacity: 1;
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+$(document).ready(function() {
+    let currentWords = { nouns: [], verbs: [] };
+    
+    // Level-based word count limits
+    const levelLimits = {
+        'a1': { min: 4, max: 6 },
+        'a2': { min: 4, max: 6 },
+        'b1': { min: 4, max: 8 },
+        'b2': { min: 4, max: 8 },
+        'c1': { min: 4, max: 12 },
+        'c2': { min: 4, max: 12 }
+    };
+    
+    // Update word count limits when level changes
+    $('#level').change(function() {
+        const level = $(this).val();
+        const limits = levelLimits[level];
+        $('#num_words').attr('min', limits.min).attr('max', limits.max);
+        
+        // Adjust current value if out of range
+        const currentValue = parseInt($('#num_words').val());
+        if (currentValue < limits.min) {
+            $('#num_words').val(limits.min);
+        } else if (currentValue > limits.max) {
+            $('#num_words').val(limits.max);
+        }
+    });
+    
+    // Choose Words button handler
+    $('#choose_words_btn').click(function() {
+        const level = $('#level').val();
+        const numWords = parseInt($('#num_words').val());
+        
+        $.ajax({
+            url: '/api/choose_words',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                level: level,
+                num_words: numWords
+            }),
+            success: function(response) {
+                currentWords.nouns = response.nouns || [];
+                currentWords.verbs = response.verbs || [];
+                renderWordClouds();
+                $('#word_cloud_card').show();
+            },
+            error: function(xhr) {
+                alert('Error choosing words: ' + (xhr.responseJSON?.error || 'Unknown error'));
+            }
+        });
+    });
+    
+    // Render word clouds
+    function renderWordClouds() {
+        // Render nouns
+        const nounCloud = $('#noun_cloud');
+        nounCloud.empty();
+        currentWords.nouns.forEach(function(word) {
+            const tag = $('<span class="word-tag"></span>')
+                .text(word.word)
+                .append($('<span class="remove-word">×</span>').click(function() {
+                    removeWord('noun', word);
+                }));
+            nounCloud.append(tag);
+        });
+        
+        // Render verbs
+        const verbCloud = $('#verb_cloud');
+        verbCloud.empty();
+        currentWords.verbs.forEach(function(word) {
+            const tag = $('<span class="word-tag"></span>')
+                .text(word.word)
+                .append($('<span class="remove-word">×</span>').click(function() {
+                    removeWord('verb', word);
+                }));
+            verbCloud.append(tag);
+        });
+    }
+    
+    // Remove word and fetch replacement
+    function removeWord(type, wordObj) {
+        const level = $('#level').val();
+        const excludeUuids = [...currentWords.nouns, ...currentWords.verbs].map(w => w.uuid);
+        
+        $.ajax({
+            url: '/api/replace_word',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                level: level,
+                functional_label: type,
+                exclude_uuids: excludeUuids
+            }),
+            success: function(response) {
+                if (response.word) {
+                    // Find and replace the word
+                    const wordArray = type === 'noun' ? currentWords.nouns : currentWords.verbs;
+                    const index = wordArray.findIndex(w => w.uuid === wordObj.uuid);
+                    if (index !== -1) {
+                        wordArray[index] = response.word;
+                        renderWordClouds();
+                    }
+                } else {
+                    alert('No replacement word found');
+                }
+            },
+            error: function(xhr) {
+                alert('Error replacing word: ' + (xhr.responseJSON?.error || 'Unknown error'));
+            }
+        });
+    }
+    
+    // Generate Story button handler with client-side retry logic
+    $('#generate_story_btn').click(function() {
+        const model = $('#llm_model').val();
+        const level = $('#level').val();
+        const nouns = currentWords.nouns.map(w => w.word);
+        const verbs = currentWords.verbs.map(w => w.word);
+        const maxAttempts = parseInt($('#max_attempts').val()) || 3;
+        
+        $('#story_loading').show();
+        $('#story_output').val('');
+        $('#story_status').hide();
+        $('#story_output_card').show();
+        $('#approve_btn').hide();
+        
+        let currentAttempt = 0;
+        
+        function attemptGeneration() {
+            currentAttempt++;
+            
+            // Update status message in span
+            const statusMsg = currentAttempt > 1 ? 
+                `Attempt ${currentAttempt} of ${maxAttempts}: Retrying story generation...` :
+                'Generating story with LLM...';
+            $('#story_status').text(statusMsg).show();
+            
+            $.ajax({
+                url: '/api/story_build_llm',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    model: model,
+                    level: level,
+                    nouns: nouns,
+                    verbs: verbs
+                }),
+                success: function(response) {
+                    if (response.success && response.story) {
+                        // Check if words are missing
+                        if (response.missing_words && response.missing_words.length > 0) {
+                            const missingMsg = `Attempt ${currentAttempt} failed: Missing words [${response.missing_words.join(', ')}]`;
+                            
+                            // If we have attempts left, retry
+                            if (currentAttempt < maxAttempts) {
+                                $('#story_status').text(missingMsg + ' - Retrying...').css('color', '#ff8800').show();
+                                setTimeout(attemptGeneration, 1000);
+                            } else {
+                                // Final attempt failed
+                                $('#story_loading').hide();
+                                $('#story_status').text(missingMsg + ' - Max attempts reached.').css('color', '#dc3545').show();
+                                $('#story_output').val(response.story);
+                                $('#approve_btn').show();
+                            }
+                        } else {
+                            // Success - all words present
+                            $('#story_loading').hide();
+                            const successMsg = currentAttempt > 1 ? 
+                                `✓ Success on attempt ${currentAttempt}! All words included.` : 
+                                '✓ Success! All words included.';
+                            $('#story_status').text(successMsg).css('color', '#28a745').show();
+                            $('#story_output').val(response.story);
+                            $('#approve_btn').show();
+                        }
+                    } else {
+                        $('#story_loading').hide();
+                        $('#story_status').text('Error: ' + (response.error || 'Unknown error')).css('color', '#dc3545').show();
+                    }
+                },
+                error: function(xhr) {
+                    $('#story_loading').hide();
+                    const errorMsg = 'Error generating story: ' + (xhr.responseJSON?.error || 'Unknown error');
+                    $('#story_status').text(errorMsg).css('color', '#dc3545').show();
+                }
+            });
+        }
+        
+        // Start first attempt
+        attemptGeneration();
+    });
+    
+    // Approve button handler (placeholder)
+    $('#approve_btn').click(function() {
+        alert('Story approval functionality coming soon!');
+    });
+});
+</script>
+{% endblock %}

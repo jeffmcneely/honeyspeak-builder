@@ -1476,6 +1476,203 @@ def api_celery_clear_queues():
         }), 500
 
 
+# === Build Stories Page and API Endpoints ===
+@app.route("/build_stories")
+def build_stories():
+    return render_template("build_stories.html")
+
+@app.route("/api/choose_words", methods=["POST"])
+def api_choose_words():
+    """Fetch random nouns and verbs by level"""
+    try:
+        data = request.get_json()
+        level = data.get("level", "a1")
+        num_words = data.get("num_words", 4)
+        
+        from libs.dictionary import Dictionary
+        db = Dictionary()
+        
+        try:
+            # Fetch random nouns
+            nouns_query = """
+                SELECT word, uuid, functional_label, level 
+                FROM words 
+                WHERE functional_label = %s AND level = %s
+                ORDER BY RANDOM() 
+                LIMIT %s
+            """
+            nouns_rows = db.execute_fetchall(nouns_query, ('noun', level, num_words))
+            nouns = [{"word": row['word'], "uuid": row['uuid'], 
+                     "functional_label": row['functional_label'], "level": row['level']}
+                    for row in nouns_rows]
+            
+            # Fetch random verbs
+            verbs_query = """
+                SELECT word, uuid, functional_label, level 
+                FROM words 
+                WHERE functional_label = %s AND level = %s
+                ORDER BY RANDOM() 
+                LIMIT %s
+            """
+            verbs_rows = db.execute_fetchall(verbs_query, ('verb', level, num_words))
+            verbs = [{"word": row['word'], "uuid": row['uuid'], 
+                     "functional_label": row['functional_label'], "level": row['level']}
+                    for row in verbs_rows]
+            
+            return jsonify({
+                "nouns": nouns,
+                "verbs": verbs
+            })
+        finally:
+            if hasattr(db, 'close'):
+                db.close()
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/replace_word", methods=["POST"])
+def api_replace_word():
+    """Fetch a single replacement word, excluding already selected UUIDs"""
+    try:
+        data = request.get_json()
+        level = data.get("level", "a1")
+        functional_label = data.get("functional_label", "noun")
+        exclude_uuids = data.get("exclude_uuids", [])
+        
+        from libs.dictionary import Dictionary
+        db = Dictionary()
+        
+        try:
+            # Build query with exclusions
+            if exclude_uuids:
+                placeholders = ",".join(["%s" for _ in exclude_uuids])
+                query = f"""
+                    SELECT word, uuid, functional_label, level 
+                    FROM words 
+                    WHERE functional_label = %s AND level = %s AND uuid NOT IN ({placeholders})
+                    ORDER BY RANDOM() 
+                    LIMIT 1
+                """
+                params = [functional_label, level] + exclude_uuids
+            else:
+                query = """
+                    SELECT word, uuid, functional_label, level 
+                    FROM words 
+                    WHERE functional_label = %s AND level = %s
+                    ORDER BY RANDOM() 
+                    LIMIT 1
+                """
+                params = [functional_label, level]
+            
+            row = db.execute_fetchone(query, params)
+            
+            if row:
+                return jsonify({
+                    "word": {
+                        "word": row['word'],
+                        "uuid": row['uuid'],
+                        "functional_label": row['functional_label'],
+                        "level": row['level']
+                    }
+                })
+            else:
+                return jsonify({"word": None})
+                
+        finally:
+            if hasattr(db, 'close'):
+                db.close()
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/story_build_llm", methods=["POST"])
+def api_story_build_llm():
+    """Send story generation request to Ollama LLM"""
+    try:
+        data = request.get_json()
+        model = data.get("model", "llama3.1:8b-instruct-q5_K_M")
+        level = data.get("level", "a1").lower()
+        nouns = data.get("nouns", [])
+        verbs = data.get("verbs", [])
+        
+        # Determine word count range based on level
+        level_ranges = {
+            "a1": "150-250",
+            "a2": "150-250",
+            "b1": "200-300",
+            "b2": "200-300",
+            "c1": "300-400",
+            "c2": "300-400"
+        }
+        word_range = level_ranges.get(level, "150-250")
+        
+        # Get Ollama URL from environment
+        ollama_url = os.getenv("LOCAL_LLM_URL", "localhost:11434")
+        if not ollama_url.startswith("http"):
+            ollama_url = f"http://{ollama_url}"
+        
+        # Combine all required words for validation
+        all_required_words = nouns + verbs
+        
+        # Build prompt
+        prompt = f"""Write a short story suitable for CEFR level {level.upper()} English learners.
+
+The story MUST incorporate ALL of the following words:
+
+Nouns: {", ".join(nouns)}
+Verbs: {", ".join(verbs)}
+
+Requirements:
+- Keep sentences simple and appropriate for {level.upper()} level
+- Use all listed words naturally in the story
+- Make the story engaging and coherent
+- Length: {word_range} words
+- Include a clear beginning, middle, and end
+- No offensive language or content
+
+Write only the story, no additional commentary."""
+
+        # Call Ollama API
+        import requests
+        response = requests.post(
+            f"{ollama_url}/api/generate",
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=120
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            story = result.get("response", "")
+            
+            # Validate that all required words are used
+            story_lower = story.lower()
+            missing_words = []
+            for word in all_required_words:
+                if word.lower() not in story_lower:
+                    missing_words.append(word)
+            
+            return jsonify({
+                "success": True,
+                "story": story,
+                "missing_words": missing_words
+            })
+        else:
+            return jsonify({"success": False, "error": f"Ollama API error: {response.status_code}"}), 500
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # For Celery CLI discovery
 celery_app = celery
 
