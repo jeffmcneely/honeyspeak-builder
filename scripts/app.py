@@ -1591,7 +1591,7 @@ def api_replace_word():
 
 @app.route("/api/story_build_llm", methods=["POST"])
 def api_story_build_llm():
-    """Send story generation request to Ollama LLM"""
+    """Send story generation request to LLM (OpenAI or Ollama)"""
     try:
         data = request.get_json()
         model = data.get("model", "llama3.1:8b-instruct-q5_K_M")
@@ -1609,11 +1609,6 @@ def api_story_build_llm():
             "c2": "300-400"
         }
         word_range = level_ranges.get(level, "150-250")
-        
-        # Get Ollama URL from environment
-        ollama_url = os.getenv("LOCAL_LLM_URL", "localhost:11434")
-        if not ollama_url.startswith("http"):
-            ollama_url = f"http://{ollama_url}"
         
         # Combine all required words for validation
         all_required_words = nouns + verbs
@@ -1636,36 +1631,80 @@ Requirements:
 
 Write only the story, no additional commentary."""
 
-        # Call Ollama API
-        import requests
-        response = requests.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False
-            },
-            timeout=120
-        )
+        # Check if this is an OpenAI model
+        openai_models = ["gpt-5", "gpt-4.1", "gpt-4", "gpt-3.5-turbo"]
+        is_openai = any(model.startswith(om) for om in openai_models)
         
-        if response.status_code == 200:
-            result = response.json()
-            story = result.get("response", "")
+        import requests
+        
+        if is_openai:
+            # Call OpenAI API
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                return jsonify({"success": False, "error": "OPENAI_API_KEY not configured"}), 500
             
-            # Validate that all required words are used
-            story_lower = story.lower()
-            missing_words = []
-            for word in all_required_words:
-                if word.lower() not in story_lower:
-                    missing_words.append(word)
+            # Build request payload
+            request_payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant that writes educational stories for English language learners."},
+                    {"role": "user", "content": prompt}
+                ]
+            }
             
-            return jsonify({
-                "success": True,
-                "story": story,
-                "missing_words": missing_words
-            })
+            # Only add temperature for models that support it (not gpt-5)
+            if not model.startswith("gpt-5"):
+                request_payload["temperature"] = 0.7
+            
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_payload,
+                timeout=120
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                story = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                return jsonify({"success": False, "error": f"OpenAI API error: {response.status_code} - {response.text}"}), 500
         else:
-            return jsonify({"success": False, "error": f"Ollama API error: {response.status_code}"}), 500
+            # Call Ollama API
+            ollama_url = os.getenv("LOCAL_LLM_URL", "localhost:11434")
+            if not ollama_url.startswith("http"):
+                ollama_url = f"http://{ollama_url}"
+            
+            response = requests.post(
+                f"{ollama_url}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=120
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                story = result.get("response", "")
+            else:
+                return jsonify({"success": False, "error": f"Ollama API error: {response.status_code}"}), 500
+        
+        # Validate that all required words are used
+        story_lower = story.lower()
+        missing_words = []
+        for word in all_required_words:
+            if word.lower() not in story_lower:
+                missing_words.append(word)
+        
+        return jsonify({
+            "success": True,
+            "story": story,
+            "missing_words": missing_words
+        })
             
     except Exception as e:
         import traceback
