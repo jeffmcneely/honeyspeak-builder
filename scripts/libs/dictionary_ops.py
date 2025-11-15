@@ -91,13 +91,16 @@ def parse_flags(entry: dict) -> Flags:
     return Flags.from_int(fl)
 
 
-def process_api_entry(entry: dict, function_label: str, level: str, db_path: str) -> Tuple[bool, str]:
+def process_api_entry(entry: dict, function_label: str, level: str, db_path: str, original_word: Optional[str] = None) -> Tuple[bool, str]:
     """
     Process a single API entry and add to database.
     
     Args:
         entry: Dictionary entry from API
+        function_label: Functional label (e.g., "verb", "noun")
+        level: CEFR level (e.g., "a1", "a2")
         db_path: Path to SQLite database
+        original_word: Original word requested (if different from entry word, level set to "unknown")
         
     Returns:
         Tuple of (success: bool, message: str)
@@ -109,6 +112,12 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
         
         meta = entry["meta"]
         word = meta.get("id").split(":")[0]
+        
+        # If original_word provided and doesn't match, set level to "unknown"
+        if original_word is not None and word != original_word:
+            level = "unknown"
+            logger.info(f"Word mismatch: requested '{original_word}', got '{word}' - setting level to 'unknown'")
+        
         shortdef = meta.get("app-shortdef", None)
         
         if shortdef is None or shortdef == []:

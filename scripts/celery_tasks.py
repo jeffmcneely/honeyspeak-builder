@@ -139,7 +139,7 @@ def fetch_and_process_word(
     results = []
     for entry in data:
         if isinstance(entry, dict):
-            success, message = process_api_entry(entry, function_label, level, db_path)
+            success, message = process_api_entry(entry, function_label, level, db_path, word)
             results.append({"success": success, "message": message})
             logger.info(f"Entry result: {message}")
     
