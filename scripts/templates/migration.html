@@ -22,7 +22,7 @@
             <div class="mb-3 form-check">
               <input type="checkbox" class="form-check-input" id="markUnknownFirst" name="mark_unknown_first">
               <label class="form-check-label" for="markUnknownFirst">
-                <strong>Mark all words as 'unknown' first</strong>
+                <strong>Mark all words as 'z1' first</strong>
                 <br>
                 <small class="text-muted">⚠️ This will reset all existing level values before updating from the wordlist</small>
               </label>
@@ -141,7 +141,7 @@ $(document).ready(function() {
     
     let confirmMsg = `Update word levels to ${level.toUpperCase()}?\n\n`;
     if (markUnknownFirst) {
-      confirmMsg += '⚠️ This will first mark ALL words as "unknown", then update matching words from the wordlist.\n\n';
+      confirmMsg += '⚠️ This will first mark ALL words as "z1", then update matching words from the wordlist.\n\n';
     } else {
       confirmMsg += 'This will update matching words in the database.\n\n';
     }

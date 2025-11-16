@@ -4,7 +4,10 @@ based on environment configuration.
 """
 
 import os
+import logging
 from typing import Union
+
+logger = logging.getLogger(__name__)
 
 def get_dictionary_backend(db_path=None, production_mode=False):
     """
@@ -25,6 +28,7 @@ def get_dictionary_backend(db_path=None, production_mode=False):
     if postgres_conn:
         # Use PostgreSQL for development
         from libs.pg_dictionary import PostgresDictionary
+        logger.info("Dictionary backend: PostgreSQL")
         return PostgresDictionary(postgres_conn)
     else:
         # Use SQLite for production/legacy. If db_path is not provided,
@@ -34,6 +38,7 @@ def get_dictionary_backend(db_path=None, production_mode=False):
         if not default_db:
             storage_dir = os.getenv("STORAGE_DIRECTORY", "/data/honeyspeak")
             default_db = os.path.join(storage_dir, "Dictionary.sqlite")
+        logger.info(f"Dictionary backend: SQLite (path={default_db})")
         return SQLiteDictionary(default_db, production_mode=production_mode)
 
 # Alias for backward compatibility

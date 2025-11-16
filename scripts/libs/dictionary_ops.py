@@ -100,7 +100,7 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
         function_label: Functional label (e.g., "verb", "noun")
         level: CEFR level (e.g., "a1", "a2")
         db_path: Path to SQLite database
-        original_word: Original word requested (if different from entry word, level set to "unknown")
+        original_word: Original word requested (if different from entry word, level set to "z1")
         
     Returns:
         Tuple of (success: bool, message: str)
@@ -113,10 +113,10 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
         meta = entry["meta"]
         word = meta.get("id").split(":")[0]
         
-        # If original_word provided and doesn't match, set level to "unknown"
+        # If original_word provided and doesn't match, set level to "z1"
         if original_word is not None and word != original_word:
-            level = "unknown"
-            logger.info(f"Word mismatch: requested '{original_word}', got '{word}' - setting level to 'unknown'")
+            level = "z1"
+            logger.info(f"Word mismatch: requested '{original_word}', got '{word}' - setting level to 'z1'")
         
         shortdef = meta.get("app-shortdef", None)
         

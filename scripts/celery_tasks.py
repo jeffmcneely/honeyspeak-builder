@@ -229,7 +229,7 @@ def mark_all_words_unknown(
     db_path: str
 ) -> Dict:
     """
-    Mark all words in the database as level='unknown'.
+    Mark all words in the database as level='z1'.
     This is a migration task to reset corrupt level data.
     
     Args:
@@ -238,29 +238,29 @@ def mark_all_words_unknown(
     Returns:
         Dict with update results
     """
-    logger.info("Marking all words as level='unknown'")
+    logger.info("Marking all words as level='z1'")
     
     try:
         db = Dictionary(db_path)
         
-        # Update all words to unknown level
-        result = db.execute_fetchone(
-            "UPDATE words SET level = %s",
-            ('unknown',)
-        )
-        db.commit()
-        
-        # Get count of updated words
+        # Get count before update
         word_count = db.get_word_count()
         
-        db.close()
+        # Update all words to unknown level - PostgreSQL execute_fetchone auto-commits
+        # Use execute() instead of execute_fetchone() since UPDATE doesn't return results without RETURNING
+        cursor = db._get_connection().cursor()
+        cursor.execute("UPDATE words SET level = %s", ('z1',))
+        rows_affected = cursor.rowcount
+        cursor.connection.commit()
+        cursor.close()
         
-        logger.info(f"Marked {word_count} words as 'unknown'")
+        logger.info(f"Marked {rows_affected} words as 'z1' (total words in DB: {word_count})")
         
         return {
             "status": "success",
-            "words_updated": word_count,
-            "message": f"Successfully marked {word_count} words as 'unknown'"
+            "words_updated": rows_affected,
+            "total_words": word_count,
+            "message": f"Successfully marked {rows_affected} words as 'z1'"
         }
         
     except Exception as e:
@@ -337,16 +337,45 @@ def update_word_levels_from_list(
             word = match.group(1).strip()
             function_labels_str = match.group(2)
             
+            # Debug logging for 'airport'
+            if word.lower() == 'airport':
+                logger.info(f"[AIRPORT DEBUG] Raw line: {repr(line)}")
+                logger.info(f"[AIRPORT DEBUG] Stripped word_text: {repr(word_text)}")
+                logger.info(f"[AIRPORT DEBUG] Parsed word: {repr(word)}")
+                logger.info(f"[AIRPORT DEBUG] Function labels string: {repr(function_labels_str)}")
+            
             # Process each function label (split by comma)
             for function_label_abbr in function_labels_str.split(","):
                 function_label = parse_function_label(function_label_abbr.strip())
                 
-                # Find matching word in database
-                # Update words that match both word text AND functional_label
-                result = db.execute_fetchone(
-                    "UPDATE words SET level = %s WHERE word = %s AND functional_label = %s RETURNING uuid",
-                    (level, word, function_label)
-                )
+                # Debug logging for 'airport'
+                if word.lower() == 'airport':
+                    logger.info(f"[AIRPORT DEBUG] Processing function_label_abbr: {repr(function_label_abbr)}")
+                    logger.info(f"[AIRPORT DEBUG] Parsed function_label: {repr(function_label)}")
+                    logger.info(f"[AIRPORT DEBUG] Level to update: {repr(level)}")
+                    logger.info(f"[AIRPORT DEBUG] SQL query: UPDATE words SET level = {repr(level)} WHERE word = {repr(word)} AND functional_label = {repr(function_label)} RETURNING uuid")
+                
+                # Find matching word in database and update its level
+                # Use direct connection management to ensure commit
+                conn = db._get_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE words SET level = %s WHERE word = %s AND functional_label = %s RETURNING uuid",
+                        (level, word, function_label)
+                    )
+                    result = cursor.fetchone()
+                    conn.commit()  # Explicitly commit the transaction
+                    cursor.close()
+                except Exception as e:
+                    conn.rollback()
+                    conn.close()
+                    raise e
+                finally:
+                    conn.close()
+                
+                if word.lower() == 'airport':
+                    logger.info(f"[AIRPORT DEBUG] Query result: {repr(result)}")
                 
                 if result:
                     updated_count += 1
@@ -355,6 +384,21 @@ def update_word_levels_from_list(
                     not_found_count += 1
                     not_found_words.append(f"{word} ({function_label})")
                     logger.debug(f"Not found: {word} ({function_label})")
+                    
+                    # Extra debug for 'airport' - check if word exists at all
+                    if word.lower() == 'airport':
+                        check_result = db.execute_fetchone(
+                            "SELECT uuid, word, functional_label, level FROM words WHERE word = %s",
+                            (word,)
+                        )
+                        logger.info(f"[AIRPORT DEBUG] Word lookup in DB: {repr(check_result)}")
+                        
+                        # Also check for case-insensitive match
+                        check_result_ci = db.execute_fetchone(
+                            "SELECT uuid, word, functional_label, level FROM words WHERE LOWER(word) = LOWER(%s)",
+                            (word,)
+                        )
+                        logger.info(f"[AIRPORT DEBUG] Case-insensitive word lookup: {repr(check_result_ci)}")
             
             # Update task progress
             if i % 100 == 0:
@@ -368,8 +412,8 @@ def update_word_levels_from_list(
                     }
                 )
         
-        db.commit()
-        db.close()
+        # Note: PostgresDictionary.execute_fetchone() auto-commits each UPDATE
+        # No need to call db.commit() or db.close() since each query manages its own connection
         
         logger.info(f"Update complete: {updated_count} updated, {not_found_count} not found")
         
@@ -843,7 +887,7 @@ def package_asset_group(
                 logger.debug(f"Skipped already-encoded audio {filename}")
             else:
                 results["audio_failed"] += 1
-                logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'unknown')}")
+                logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'z1')}")
         
         elif asset_type == "image":
             # image_{uuid}_{def_id}_{variant}.png
@@ -880,7 +924,7 @@ def package_asset_group(
                 logger.debug(f"Skipped already-encoded image {filename}")
             else:
                 results["images_failed"] += 1
-                logger.warning(f"Failed to encode image {filename}: {result.get('error', 'unknown')}")
+                logger.warning(f"Failed to encode image {filename}: {result.get('error', 'z1')}")
         
         # Update progress
         if i % 50 == 0:

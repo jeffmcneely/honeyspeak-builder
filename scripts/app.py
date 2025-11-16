@@ -609,6 +609,8 @@ def build_dictionary():
 def build_dictionary_single():
     """Process a single word from the dictionary API."""
     word = request.form.get("word", "").strip().lower()
+    function_label = request.form.get("function_label", "noun").strip()
+    level = request.form.get("level", "z1").strip()
     
     print(f"[APP DEBUG] Single word request: {word}")
     print(f"[APP DEBUG] Database backend: {'PostgreSQL' if POSTGRES_CONN else 'SQLite'}")
@@ -627,7 +629,7 @@ def build_dictionary_single():
     db_path = None  # Let Dictionary class decide based on environment
     
     # Enqueue task for single word using send_task with full task name
-    task = celery.send_task("scripts.celery_tasks.fetch_and_process_word", args=[word, db_path, api_key])
+    task = celery.send_task("scripts.celery_tasks.fetch_and_process_word", args=[word, function_label, level, db_path, api_key])
     flash(f"Fetching word '{word}' (task id: {task.id})", "info")
     return redirect(url_for("task_status", task_id=task.id))
 
@@ -1064,6 +1066,7 @@ def database_management():
                         "fl": word.functional_label,
                         "uuid": word.uuid,
                         "flags": word.flags,
+                        "level": word.level,
                         "definitions": [],
                         "assets": []
                     }
@@ -1793,7 +1796,7 @@ def migration():
 
 @app.route("/migration/mark_unknown", methods=["POST"])
 def migration_mark_unknown():
-    """Mark all words as level='unknown'."""
+    """Mark all words as level='z1'."""
     try:
         # Use default database (PostgreSQL or SQLite based on config)
         db_path = None  # Let Dictionary class decide based on environment
@@ -1804,7 +1807,7 @@ def migration_mark_unknown():
         return jsonify({
             "ok": True,
             "task_id": task.id,
-            "message": "Task started to mark all words as 'unknown'"
+            "message": "Task started to mark all words as 'z1'"
         })
     except Exception as e:
         import traceback

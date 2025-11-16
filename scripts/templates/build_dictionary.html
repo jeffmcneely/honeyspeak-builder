@@ -24,6 +24,33 @@
           <input type="text" class="form-control" id="single_word" name="word" placeholder="Enter a word (e.g., hello)" required>
           <small class="form-text text-muted">Fetch and process a single word from the dictionary API</small>
         </div>
+        <div class="mb-3">
+          <label for="single_function_label" class="form-label">Function Label:</label>
+          <select class="form-control" id="single_function_label" name="function_label">
+            <option value="noun" selected>noun</option>
+            <option value="verb">verb</option>
+            <option value="adjective">adjective</option>
+            <option value="adverb">adverb</option>
+            <option value="preposition">preposition</option>
+            <option value="conjunction">conjunction</option>
+            <option value="interjection">interjection</option>
+            <option value="pronoun">pronoun</option>
+          </select>
+          <small class="form-text text-muted">Select the part of speech for the word</small>
+        </div>
+        <div class="mb-3">
+          <label for="single_level" class="form-label">CEFR Level:</label>
+          <select class="form-control" id="single_level" name="level">
+            <option value="z1" selected>Unknown</option>
+            <option value="a1">A1</option>
+            <option value="a2">A2</option>
+            <option value="b1">B1</option>
+            <option value="b2">B2</option>
+            <option value="c1">C1</option>
+            <option value="c2">C2</option>
+          </select>
+          <small class="form-text text-muted">Optional: Select CEFR level for word classification</small>
+        </div>
         <button type="submit" class="btn btn-primary">🔍 Fetch Word</button>
       </form>
     </div>

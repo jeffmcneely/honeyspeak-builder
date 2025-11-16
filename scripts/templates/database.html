@@ -181,6 +181,9 @@
                     <h6>Word: {{ word_data.word }}</h6>
                     <p><strong>UUID:</strong> <code>{{ word_data.uuid }}</code></p>
                     <p><strong>Part of Speech:</strong> {{ word_data.fl }}</p>
+                    {% if word_data.level %}
+                    <p><strong>Level:</strong> <span class="badge bg-info">{{ word_data.level }}</span></p>
+                    {% endif %}
                     {% if word_data.flags_list %}
                     <p><strong>Flags:</strong>
                         {% for flag in word_data.flags_list %}
