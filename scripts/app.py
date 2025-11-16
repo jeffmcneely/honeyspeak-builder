@@ -1712,6 +1712,164 @@ Write only the story, no additional commentary."""
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/approve_story", methods=["POST"])
+def api_approve_story():
+    """Save approved story to PostgreSQL database with word UUIDs"""
+    try:
+        data = request.get_json()
+        story_text = data.get("story", "").strip()
+        level = data.get("level", "a1").lower()
+        model = data.get("model", "")
+        word_uuids = data.get("word_uuids", [])  # List of word UUIDs
+        
+        if not story_text:
+            return jsonify({"success": False, "error": "No story content provided"}), 400
+        
+        if not word_uuids:
+            return jsonify({"success": False, "error": "No word UUIDs provided"}), 400
+        
+        from libs.pg_dictionary import PostgresDictionary
+        import uuid as uuid_lib
+        
+        # Generate UUID for this story
+        story_uuid = str(uuid_lib.uuid4())
+        
+        # Extract title from first line or use default
+        lines = story_text.split('\n')
+        title = lines[0][:50] if lines else "Untitled Story"
+        if len(title) == 50:
+            title += "..."
+        
+        db = PostgresDictionary()
+        
+        try:
+            # Add story to database
+            db.add_story(
+                story_uuid=story_uuid,
+                title=title,
+                style=model,  # Store the model used as 'style'
+                grouping=level,  # Store CEFR level as 'grouping'
+                difficulty=level  # Also store as difficulty
+            )
+            
+            # Add story as a single paragraph
+            db.add_story_paragraph(
+                story_uuid=story_uuid,
+                paragraph_index=0,
+                paragraph_title="",
+                content=story_text
+            )
+            
+            # Add word associations (all words in paragraph 0)
+            story_words = [(story_uuid, word_uuid, 0) for word_uuid in word_uuids]
+            words_added = db.batch_add_story_words(story_words)
+            
+            return jsonify({
+                "success": True,
+                "story_uuid": story_uuid,
+                "words_added": words_added,
+                "message": f"Story saved successfully with {words_added} word associations"
+            })
+            
+        except Exception as db_error:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"success": False, "error": f"Database error: {str(db_error)}"}), 500
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# === Migration Routes ===
+
+@app.route("/migration")
+def migration():
+    """Migration tools page for updating word levels."""
+    backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
+    return render_template("migration.html", backend=backend)
+
+
+@app.route("/migration/mark_unknown", methods=["POST"])
+def migration_mark_unknown():
+    """Mark all words as level='unknown'."""
+    try:
+        # Use default database (PostgreSQL or SQLite based on config)
+        db_path = None  # Let Dictionary class decide based on environment
+        
+        # Enqueue task
+        task = celery.send_task("scripts.celery_tasks.mark_all_words_unknown", args=[db_path])
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "message": "Task started to mark all words as 'unknown'"
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/migration/update_levels", methods=["POST"])
+def migration_update_levels():
+    """Update word levels from uploaded wordlist."""
+    try:
+        wordlist_file = request.files.get("wordlist")
+        level = request.form.get("level", "a1").lower()
+        
+        if not wordlist_file:
+            return jsonify({
+                "ok": False,
+                "error": "No wordlist file uploaded"
+            }), 400
+        
+        # Read wordlist
+        try:
+            wordlist_content = wordlist_file.read().decode('utf-8')
+            words = [w.strip() for w in wordlist_content.splitlines() if w.strip()]
+        except Exception as e:
+            return jsonify({
+                "ok": False,
+                "error": f"Error reading wordlist: {e}"
+            }), 400
+        
+        if not words:
+            return jsonify({
+                "ok": False,
+                "error": "Wordlist is empty"
+            }), 400
+        
+        # Use default database (PostgreSQL or SQLite based on config)
+        db_path = None  # Let Dictionary class decide based on environment
+        
+        # Enqueue task
+        task = celery.send_task(
+            "scripts.celery_tasks.update_word_levels_from_list",
+            args=[words, db_path, level]
+        )
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "words_count": len(words),
+            "level": level,
+            "message": f"Task started to update {len(words)} words to level '{level}'"
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+
+
 # For Celery CLI discovery
 celery_app = celery
 

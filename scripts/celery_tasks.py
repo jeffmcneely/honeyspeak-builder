@@ -223,6 +223,176 @@ def process_wordlist(
     }
 
 
+@app.task(base=LoggingTask, bind=True)
+def mark_all_words_unknown(
+    self,
+    db_path: str
+) -> Dict:
+    """
+    Mark all words in the database as level='unknown'.
+    This is a migration task to reset corrupt level data.
+    
+    Args:
+        db_path: Path to database (None for PostgreSQL)
+        
+    Returns:
+        Dict with update results
+    """
+    logger.info("Marking all words as level='unknown'")
+    
+    try:
+        db = Dictionary(db_path)
+        
+        # Update all words to unknown level
+        result = db.execute_fetchone(
+            "UPDATE words SET level = %s",
+            ('unknown',)
+        )
+        db.commit()
+        
+        # Get count of updated words
+        word_count = db.get_word_count()
+        
+        db.close()
+        
+        logger.info(f"Marked {word_count} words as 'unknown'")
+        
+        return {
+            "status": "success",
+            "words_updated": word_count,
+            "message": f"Successfully marked {word_count} words as 'unknown'"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error marking words as unknown: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@app.task(base=LoggingTask, bind=True)
+def update_word_levels_from_list(
+    self,
+    wordlist: List[str],
+    db_path: str,
+    level: str
+) -> Dict:
+    """
+    Update CEFR levels for existing words based on a wordlist.
+    Uses the same regex and parsing logic as process_wordlist.
+    
+    Args:
+        wordlist: List of word lines (e.g., "apple n." or "run v.")
+        db_path: Path to database (None for PostgreSQL)
+        level: CEFR level to assign (a1, a2, b1, b2, c1, c2)
+        
+    Returns:
+        Dict with update results
+    """
+    logger.info(f"Updating word levels to '{level}' for {len(wordlist)} words")
+    
+    def parse_function_label(abbr: str) -> str:
+        """Parse function label abbreviation."""
+        match abbr:
+            case 'n.':
+                return 'noun'
+            case 'v.':
+                return 'verb'
+            case 'adj.':
+                return 'adjective'
+            case 'adv.':
+                return 'adverb'
+            case 'prep.':
+                return 'preposition'
+            case 'conj.':
+                return 'conjunction'
+            case 'interj.':
+                return 'interjection'
+            case 'pron.':
+                return 'pronoun'
+            case _:
+                return abbr
+    
+    try:
+        db = Dictionary(db_path)
+        
+        updated_count = 0
+        not_found_count = 0
+        not_found_words = []
+        
+        for i, line in enumerate(wordlist):
+            word_text = line.strip()
+            if not word_text:
+                continue
+            
+            # Parse word and function labels using same regex as process_wordlist
+            match = re.match(r"^([a-zA-Z ]+) ([a-z./, ]+)$", word_text)
+            if not match:
+                logger.warning(f"Could not parse line: {word_text}")
+                continue
+            
+            word = match.group(1).strip()
+            function_labels_str = match.group(2)
+            
+            # Process each function label (split by comma)
+            for function_label_abbr in function_labels_str.split(","):
+                function_label = parse_function_label(function_label_abbr.strip())
+                
+                # Find matching word in database
+                # Update words that match both word text AND functional_label
+                result = db.execute_fetchone(
+                    "UPDATE words SET level = %s WHERE word = %s AND functional_label = %s RETURNING uuid",
+                    (level, word, function_label)
+                )
+                
+                if result:
+                    updated_count += 1
+                    logger.debug(f"Updated: {word} ({function_label}) -> {level}")
+                else:
+                    not_found_count += 1
+                    not_found_words.append(f"{word} ({function_label})")
+                    logger.debug(f"Not found: {word} ({function_label})")
+            
+            # Update task progress
+            if i % 100 == 0:
+                self.update_state(
+                    state='PROGRESS',
+                    meta={
+                        'current': i+1,
+                        'total': len(wordlist),
+                        'updated': updated_count,
+                        'not_found': not_found_count
+                    }
+                )
+        
+        db.commit()
+        db.close()
+        
+        logger.info(f"Update complete: {updated_count} updated, {not_found_count} not found")
+        
+        return {
+            "status": "success",
+            "words_processed": len(wordlist),
+            "words_updated": updated_count,
+            "words_not_found": not_found_count,
+            "not_found_words": not_found_words[:50],  # Limit to first 50 for readability
+            "level": level,
+            "message": f"Successfully updated {updated_count} words to level '{level}'"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating word levels: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 # ===== Asset Generation Tasks =====
 
 @app.task(base=LoggingTask, bind=True)

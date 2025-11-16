@@ -164,6 +164,9 @@
 <script>
 $(document).ready(function() {
     let currentWords = { nouns: [], verbs: [] };
+    let currentStory = "";
+    let currentModel = "";
+    let currentLevel = "";
     
     // Level-based word count limits
     const levelLimits = {
@@ -335,6 +338,12 @@ $(document).ready(function() {
                                 '✓ Success! All words included.';
                             $('#story_status').text(successMsg).css('color', '#28a745').show();
                             $('#story_output').val(response.story);
+                            
+                            // Store story metadata for approval
+                            currentStory = response.story;
+                            currentModel = model;
+                            currentLevel = level;
+                            
                             $('#approve_btn').show();
                         }
                     } else {
@@ -354,9 +363,44 @@ $(document).ready(function() {
         attemptGeneration();
     });
     
-    // Approve button handler (placeholder)
+    // Approve button handler
     $('#approve_btn').click(function() {
-        alert('Story approval functionality coming soon!');
+        // Collect all word UUIDs
+        const wordUuids = [...currentWords.nouns, ...currentWords.verbs].map(w => w.uuid);
+        
+        // Disable button during submission
+        $('#approve_btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Saving...');
+        
+        $.ajax({
+            url: '/api/approve_story',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                story: currentStory,
+                level: currentLevel,
+                model: currentModel,
+                word_uuids: wordUuids
+            }),
+            success: function(response) {
+                if (response.success) {
+                    $('#story_status').text('✓ ' + response.message).css('color', '#28a745').show();
+                    $('#approve_btn').html('<i class="bi bi-check-circle"></i> Saved!').removeClass('btn-primary').addClass('btn-success');
+                    
+                    // Show success message
+                    setTimeout(function() {
+                        alert(`Story saved successfully!\nStory UUID: ${response.story_uuid}\nWord associations: ${response.words_added}`);
+                    }, 100);
+                } else {
+                    $('#story_status').text('Error: ' + (response.error || 'Unknown error')).css('color', '#dc3545').show();
+                    $('#approve_btn').prop('disabled', false).html('<i class="bi bi-check-circle"></i> Approve Story');
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON?.error || 'Unknown error';
+                $('#story_status').text('Error saving story: ' + errorMsg).css('color', '#dc3545').show();
+                $('#approve_btn').prop('disabled', false).html('<i class="bi bi-check-circle"></i> Approve Story');
+            }
+        });
     });
 });
 </script>
