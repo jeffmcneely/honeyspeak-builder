@@ -5,7 +5,61 @@
 {% block content %}
 <div class="container mt-4">
   <h1>🔄 Migration Tools</h1>
-  <p class="lead">Tools for reorganizing and cleaning up asset files.</p>
+  <p class="lead">Tools for reorganizing assets and updating database schema.</p>
+  <p class="text-muted">Database Backend: <strong>{{ backend }}</strong></p>
+  
+  <div class="row mt-4">
+    <div class="col-md-12">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">📝 Update Word Levels</h5>
+          <p class="card-text">
+            Upload a wordlist to update CEFR levels for existing words in the database.
+            Uses the same format as dictionary building (e.g., "apple n.", "run v.").
+          </p>
+          
+          <form id="updateLevelsForm">
+            <div class="mb-3 form-check">
+              <input type="checkbox" class="form-check-input" id="markUnknownFirst" name="mark_unknown_first">
+              <label class="form-check-label" for="markUnknownFirst">
+                <strong>Mark all words as 'unknown' first</strong>
+                <br>
+                <small class="text-muted">⚠️ This will reset all existing level values before updating from the wordlist</small>
+              </label>
+            </div>
+            
+            <div class="mb-3">
+              <label for="wordlistFile" class="form-label">Wordlist File</label>
+              <input type="file" class="form-control" id="wordlistFile" name="wordlist" required accept=".txt">
+              <small class="form-text text-muted">Format: "word function_label" (e.g., "apple n." or "run v.")</small>
+            </div>
+            
+            <div class="mb-3">
+              <label for="cefrLevel" class="form-label">CEFR Level</label>
+              <select class="form-select" id="cefrLevel" name="level" required>
+                <option value="a1">A1</option>
+                <option value="a2">A2</option>
+                <option value="b1">B1</option>
+                <option value="b2">B2</option>
+                <option value="c1">C1</option>
+                <option value="c2">C2</option>
+              </select>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+              <span class="spinner-border spinner-border-sm d-none" role="status" id="updateSpinner"></span>
+              Update Levels
+            </button>
+          </form>
+          
+          <div id="updateResult" class="mt-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <hr class="my-4">
+  <h3>Asset Management</h3>
   
   <div class="row mt-4">
     <div class="col-md-6">
@@ -20,7 +74,6 @@
             <li><strong>audio/</strong> - All *.aac audio files</li>
             <li><strong>temp/</strong> - Temporary workspace</li>
           </ul>
-          <p class="text-muted">Also deletes all low_* files.</p>
           <button id="relocateFilesBtn" class="btn btn-primary">
             <span class="spinner-border spinner-border-sm d-none" role="status" id="relocateSpinner"></span>
             Relocate Files
@@ -78,11 +131,143 @@
 {% block extra_scripts %}
 <script>
 $(document).ready(function() {
+  // Update word levels handler
+  $('#updateLevelsForm').on('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const level = $('#cefrLevel').val();
+    const markUnknownFirst = $('#markUnknownFirst').is(':checked');
+    
+    let confirmMsg = `Update word levels to ${level.toUpperCase()}?\n\n`;
+    if (markUnknownFirst) {
+      confirmMsg += '⚠️ This will first mark ALL words as "unknown", then update matching words from the wordlist.\n\n';
+    } else {
+      confirmMsg += 'This will update matching words in the database.\n\n';
+    }
+    confirmMsg += 'Continue?';
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    const $btn = $(this).find('button[type="submit"]');
+    const $spinner = $('#updateSpinner');
+    const $result = $('#updateResult');
+    
+    // Disable button and show spinner
+    $btn.prop('disabled', true);
+    $spinner.removeClass('d-none');
+    $result.html('');
+    
+    // If mark_unknown_first is checked, call that endpoint first
+    if (markUnknownFirst) {
+      $result.html('<div class="alert alert-info">Step 1/2: Marking all words as unknown...</div>');
+      
+      $.ajax({
+        url: '/migration/mark_unknown',
+        method: 'POST',
+        success: function(markResponse) {
+          if (markResponse.ok) {
+            $result.html(`
+              <div class="alert alert-success">
+                <strong>Step 1/2 Complete:</strong> Marked all words as unknown<br>
+                Task ID: <code>${markResponse.task_id}</code>
+              </div>
+              <div class="alert alert-info">Step 2/2: Updating word levels from wordlist...</div>
+            `);
+            
+            // Now proceed with the level update
+            proceedWithLevelUpdate(formData, level, $btn, $spinner, $result);
+          } else {
+            $btn.prop('disabled', false);
+            $spinner.addClass('d-none');
+            $result.html(`
+              <div class="alert alert-danger">
+                <strong>Error in Step 1:</strong> ${markResponse.error || 'Unknown error'}
+              </div>
+            `);
+          }
+        },
+        error: function(xhr) {
+          $btn.prop('disabled', false);
+          $spinner.addClass('d-none');
+          
+          let errorMsg = 'Request failed';
+          try {
+            const response = JSON.parse(xhr.responseText);
+            errorMsg = response.error || errorMsg;
+          } catch (e) {}
+          
+          $result.html(`
+            <div class="alert alert-danger">
+              <strong>Error in Step 1:</strong> ${errorMsg}
+            </div>
+          `);
+        }
+      });
+    } else {
+      // Skip mark_unknown step, go straight to level update
+      proceedWithLevelUpdate(formData, level, $btn, $spinner, $result);
+    }
+  });
+  
+  // Helper function to update levels
+  function proceedWithLevelUpdate(formData, level, $btn, $spinner, $result) {
+    $.ajax({
+      url: '/migration/update_levels',
+      method: 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function(response) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        if (response.ok) {
+          const currentHtml = $result.html();
+          $result.html(currentHtml + `
+            <div class="alert alert-success">
+              <strong>Task Started!</strong><br>
+              Processing ${response.words_count} words to level <strong>${response.level.toUpperCase()}</strong><br>
+              Task ID: <code>${response.task_id}</code><br>
+              <small>Check <a href="/celery_status">Celery Status</a> or <a href="/task_status/${response.task_id}">Task Status</a> for progress.</small>
+            </div>
+          `);
+        } else {
+          const currentHtml = $result.html();
+          $result.html(currentHtml + `
+            <div class="alert alert-danger">
+              <strong>Error:</strong> ${response.error || 'Unknown error'}
+            </div>
+          `);
+        }
+      },
+      error: function(xhr) {
+        $btn.prop('disabled', false);
+        $spinner.addClass('d-none');
+        
+        let errorMsg = 'Request failed';
+        try {
+          const response = JSON.parse(xhr.responseText);
+          errorMsg = response.error || errorMsg;
+        } catch (e) {}
+        
+        const currentHtml = $result.html();
+        $result.html(currentHtml + `
+          <div class="alert alert-danger">
+            <strong>Error:</strong> ${errorMsg}
+          </div>
+        `);
+      }
+    });
+  }
+  
   // Relocate Files handler
   $('#relocateFilesBtn').on('click', function(e) {
     e.preventDefault();
     
-    if (!confirm('Relocate files in assets_hires?\n\nThis will:\n- Move image_* to image/\n- Move *.aac to audio/\n- Delete low_* files\n- Create temp/ directory\n\nContinue?')) {
+    if (!confirm('Relocate files in assets_hires?\n\nThis will:\n- Move image_* to image/\n- Move *.aac to audio/\n- Create temp/ directory\n\nContinue?')) {
       return;
     }
     
@@ -109,7 +294,6 @@ $(document).ready(function() {
               <ul class="mb-0 mt-2">
                 <li>Images moved: ${response.images_moved}</li>
                 <li>Audio moved: ${response.audio_moved}</li>
-                <li>Low files deleted: ${response.low_deleted}</li>
               </ul>
             </div>
           `);
