@@ -104,15 +104,17 @@ Both `PostgresDictionary` and `SQLiteDictionary` implement the same interface:
 ### Core Methods
 - `add_word(word, functional_label, flags)` - Add a word
 - `add_shortdef(uuid, definition)` - Add a definition
-- `add_external_asset(uuid, assetgroup, sid, package, filename)` - Add asset metadata
+- ~~`add_external_asset(uuid, assetgroup, sid, package, filename)`~~ - **DEPRECATED** - Add asset metadata (generates warning)
 - `get_word_by_uuid(uuid)` - Get word by UUID
 - `get_word_by_text(word)` - Get word by text
 - `get_shortdefs(uuid)` - Get definitions for a word
-- `get_external_assets(uuid, assetgroup)` - Get assets for a word
+- `get_external_assets(uuid, assetgroup)` - Get assets for a word (read-only, for legacy views)
 - `get_all_words(limit)` - Get all words
 - `get_word_count()` - Count words
 - `get_shortdef_count()` - Count definitions
-- `get_asset_count()` - Count assets
+- `get_asset_count()` - Count assets (read-only, for legacy views)
+
+> **⚠️ NOTE:** The `external_assets` table and its write methods (`add_external_asset`, `add_asset`, `delete_asset`, `delete_assets`) are **deprecated**. Assets are now stored in the filesystem with predictable naming conventions (`word_{uuid}_0.ext`, `shortdef_{uuid}_{id}.ext`, `image_{uuid}_{id}.ext`). Read-only methods like `get_external_assets()` and `get_asset_count()` remain for backwards compatibility with database stats views.
 
 ### Transaction Methods
 - `begin_immediate()` - Start transaction (returns connection for PostgreSQL)

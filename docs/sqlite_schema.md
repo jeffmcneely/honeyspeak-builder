@@ -1,6 +1,8 @@
 # SQLite Schema Documentation
 
-This document describes the database schema used by the ESL Builder project as implemented in `libs/sqlite_dictionary.py`.functional_label TEXT,
+This document describes the database schema used by the ESL Builder project as implemented in `libs/sqlite_dictionary.py`.
+
+> **⚠️ IMPORTANT NOTE:** The `external_assets` table is **deprecated for write operations**. Assets are now stored directly in the filesystem with predictable naming conventions and discovered via filesystem scanning. The table remains for backwards compatibility with legacy database stats/query views only.
 
 ## SQLite schema and data model
 
@@ -101,6 +103,8 @@ class ShortDef:
 
 ### external_assets
 
+> **⚠️ DEPRECATED:** This table is deprecated for write operations. Assets are now stored in the filesystem with predictable naming conventions (`word_{uuid}_0.ext`, `shortdef_{uuid}_{id}.ext`, `image_{uuid}_{id}.ext`) and discovered via filesystem scanning during packaging. The table remains only for backwards compatibility with legacy database stats and query views. Read-only methods still work, but write methods (`add_asset`, `add_external_asset`, `delete_asset`, `delete_assets`) will generate deprecation warnings.
+
 ```sql
 CREATE TABLE IF NOT EXISTS external_assets (
   uuid TEXT,
@@ -136,15 +140,17 @@ class Asset:
 ```
 words (1) ──< shortdef (many)
   │
-  └──< external_assets (many)
+  └──< external_assets (many)  [DEPRECATED - read-only for legacy views]
 
-shortdef (1) ──< external_assets (many)  [via sid]
+shortdef (1) ──< external_assets (many)  [via sid] [DEPRECATED - read-only for legacy views]
 
 test (1) ──< question (many)
 
 question (1) ──< answer (many)
   └──> words (via body_uuid)
 ```
+
+**Note:** The `external_assets` relationships are maintained for backwards compatibility but are no longer actively written to. Assets are stored in the filesystem with predictable naming conventions.
 
 ### test
 

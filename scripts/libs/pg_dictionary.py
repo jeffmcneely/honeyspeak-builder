@@ -7,6 +7,7 @@ from pathlib import Path
 import uuid as uuid_lib
 from typing import Literal, Optional, Iterable, List
 import logging
+import warnings
 
 # PostgreSQL schema matching SQLite schema
 POSTGRES_SCHEMA = [
@@ -222,7 +223,24 @@ class PostgresDictionary:
             conn.close()
     
     def add_external_asset(self, word_uuid: str, assetgroup: str, sid: int, package: str, filename: str):
-        """Add an external asset record."""
+        """
+        DEPRECATED: Add an external asset record.
+        
+        This method is deprecated. Assets are now stored in the filesystem with predictable
+        naming conventions and discovered via filesystem scanning during packaging.
+        The external_assets table is maintained only for backwards compatibility with
+        legacy database stats/query views.
+        
+        Do not use this method for new code. Assets should be written directly to the
+        filesystem using naming conventions: word_{uuid}_0.ext, shortdef_{uuid}_{id}.ext, etc.
+        """
+        warnings.warn(
+            "add_external_asset() is deprecated. Assets are now stored in filesystem "
+            "with predictable naming (word_{uuid}_0.ext, shortdef_{uuid}_{id}.ext, etc.). "
+            "The external_assets table is read-only for legacy views.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:

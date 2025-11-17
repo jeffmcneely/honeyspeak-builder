@@ -42,23 +42,25 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 
 ## Key files and contracts
 - **`libs/pg_dictionary.py`** is authoritative for the PostgreSQL schema and API (build phase).
-  - Tables: `words(uuid PRIMARY KEY)`, `shortdef(UNIQUE(uuid, definition))`, `external_assets(UNIQUE(uuid, assetgroup, sid))`, `stories`, `story_paragraphs`, `story_words`.
+  - Tables: `words(uuid PRIMARY KEY)`, `shortdef(UNIQUE(uuid, definition))`, `external_assets(UNIQUE(uuid, assetgroup, sid))` [**DEPRECATED for writes, read-only for legacy views**], `stories`, `story_paragraphs`, `story_words`.
   - Uses connection pooling; all methods get fresh connections from `_get_connection()`.
   - Foreign keys with CASCADE deletes; batch operations for performance.
+  - **IMPORTANT:** `external_assets` table is NO LONGER WRITTEN TO during asset generation or packaging. Asset files are stored directly in the filesystem with predictable naming conventions. The table remains only for backwards compatibility with database stats/query views.
   
 - **`libs/sqlite_dictionary.py`** mirrors the schema for SQLite (packaging phase).
   - PRAGMA: journal_mode=DELETE (avoid WAL/SHM files); foreign_keys=ON with CASCADE deletes.
-  - Asset conventions:
-    - Word audio: `word_{uuid}_0.{ext}` with `assetgroup="word"`, `sid=0`.
-    - Definition audio: `shortdef_{uuid}_{id}.{ext}` with `assetgroup="shortdef"`, `sid={id}`.
-    - Definition image: `image_{uuid}_{id}.{ext}` with `assetgroup="image"`, `sid={id}`.
-  - **INCONSISTENCY:** `external_assets.package` stores a two-character text id (e.g., `a0`) but may exceed two chars if package count grows beyond 26×10 = 260. The CHECK constraint `length(package) = 2` in PostgreSQL will fail if this happens.
+  - Asset file naming conventions (assets stored in filesystem, NOT in database):
+    - Word audio: `word_{uuid}_0.{ext}`
+    - Definition audio: `shortdef_{uuid}_{id}.{ext}`
+    - Definition image: `image_{uuid}_{id}.{ext}`
+  - **DEPRECATED:** `external_assets` table exists in schema but is NOT used for asset tracking. Assets are discovered via filesystem scanning with predictable naming patterns.
 
 - **`scripts/celery_tasks.py`** defines all background tasks:
   - `fetch_word_task`: fetch from dictionary API and persist to PostgreSQL.
-  - `generate_word_audio_task`, `generate_definition_audio_task`, `generate_definition_image_task`: OpenAI asset generation.
-  - `package_all_assets`: batch packaging (transcode/downscale/zip).
+  - `generate_word_audio_task`, `generate_definition_audio_task`, `generate_definition_image_task`: OpenAI asset generation (writes files to filesystem, does NOT write to `external_assets` table).
+  - `package_all_assets`: batch packaging (transcode/downscale/zip) using filesystem-based asset discovery.
   - All tasks use `LoggingTask` base class with structured logging to `logs/`.
+  - **IMPORTANT:** Asset generation tasks write directly to filesystem with predictable naming; no database tracking of individual assets.
 
 - **`scripts/app.py`** is the Flask API entry point:
   - Routes for dictionary building, asset generation, packaging, database stats, downloads.
@@ -114,7 +116,9 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 - **Use `SQLiteDictionary` methods** only during packaging/export.
 - **All API requests expected to take >1 second MUST run as Celery tasks** using `.delay()` or `.apply_async()`.
 - `add_shortdef` dedupes on `(uuid, definition)`; avoid re-adding identical defs.
-- Asset id mapping is strict: use the correct `assetgroup` and `sid` or packaging lookups will fail.
+- **`external_assets` table is DEPRECATED for writes.** Asset generation tasks write files directly to filesystem with predictable naming (`word_{uuid}_0.ext`, `shortdef_{uuid}_{id}.ext`, `image_{uuid}_{id}.ext`). The table remains for read-only display in database stats views.
+- **DO NOT call `add_external_asset()` or `add_asset()` methods.** These are deprecated and will generate warnings.
+- Asset discovery during packaging uses filesystem scanning, not database queries.
 - OpenAI 400 errors are logged to Celery task logs (see `logs/` directory).
 - Large media folders (`assets_hires`, `assets`, `icons`, `.heif`) are git-ignored by design.
 - **CLI scripts (`build_dictionary.py`, `build_assets.py`, `build_package.py`) are DEPRECATED.** Use the Flask API and Celery tasks instead.
@@ -136,15 +140,17 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 - `COMFY_OUTPUT_FOLDER`: (Optional) ComfyUI output directory mount
 
 ## Known inconsistencies
-1. **Package ID length constraint:** PostgreSQL schema has `CHECK(length(package) = 2)` but package IDs can exceed 2 chars if >260 packages are created. Recommend removing the CHECK constraint or switching to `package_id INTEGER` with sequence.
-2. **CLI script references:** Some docstrings and comments still reference CLI workflows (`python build_dictionary.py ...`). These are deprecated; use Flask API + Celery tasks.
-3. **POSTGRES_CONN vs POSTGRES_CONNECTION:** Both env vars are supported for backwards compatibility. Code should standardize on `POSTGRES_CONNECTION`.
-4. **Mixed database usage:** Some code paths still expect SQLite (e.g., `DICT_PATH` fallback). PostgreSQL should be the only database during build/dev; SQLite only for export.
+1. **`external_assets` table is deprecated but still exists:** The table schema remains in both PostgreSQL and SQLite databases but is NO LONGER WRITTEN TO. Read-only methods (`get_external_assets`, `get_asset_count`, etc.) still work for legacy database stats views. Write methods (`add_external_asset`, `add_asset`) are deprecated and should not be called.
+2. **Package ID length constraint:** PostgreSQL schema has `CHECK(length(package) = 2)` but package IDs can exceed 2 chars if >260 packages are created. This is moot since the table is no longer written to.
+3. **CLI script references:** Some docstrings and comments still reference CLI workflows (`python build_dictionary.py ...`). These are deprecated; use Flask API + Celery tasks.
+4. **POSTGRES_CONN vs POSTGRES_CONNECTION:** Both env vars are supported for backwards compatibility. Code should standardize on `POSTGRES_CONNECTION`.
+5. **Mixed database usage:** Some code paths still expect SQLite (e.g., `DICT_PATH` fallback). PostgreSQL should be the only database during build/dev; SQLite only for export.
 
 ## When extending
-- New asset types: mirror the patterns above and extend `external_assets` consumers; keep filename and `(assetgroup, sid)` consistent.
+- New asset types: follow filesystem-based naming conventions (`{type}_{uuid}_{id}.{ext}`); asset discovery happens via filesystem scanning during packaging.
 - Schema changes: update `libs/pg_dictionary.py` first; sync to `libs/sqlite_dictionary.py`; update `docs/sqlite_schema.md`.
 - New long-running operations: add as Celery task in `scripts/celery_tasks.py` with `LoggingTask` base class; invoke via `.delay()` in Flask API.
 - New Flask routes: add to `scripts/app.py` or create a blueprint like `moderator.py`.
+- **DO NOT add new `external_assets` write operations.** The table is deprecated for writes.
 
 If anything here seems off or incomplete, tell me and I'll refine this doc.

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import uuid
 from typing import Literal, Optional, Iterable, List
+import warnings
 
 SQLITE_SCHEMA = [
     # words: uuid is the PRIMARY KEY; index on word for faster lookups
@@ -658,6 +659,24 @@ class SQLiteDictionary:
         package: str,
         filename: str,
     ) -> bool:
+        """
+        DEPRECATED: Add an external asset record.
+        
+        This method is deprecated. Assets are now stored in the filesystem with predictable
+        naming conventions and discovered via filesystem scanning during packaging.
+        The external_assets table is maintained only for backwards compatibility with
+        legacy database stats/query views.
+        
+        Do not use this method for new code. Assets should be written directly to the
+        filesystem using naming conventions: word_{uuid}_0.ext, shortdef_{uuid}_{id}.ext, etc.
+        """
+        warnings.warn(
+            "add_asset() is deprecated. Assets are now stored in filesystem "
+            "with predictable naming (word_{uuid}_0.ext, shortdef_{uuid}_{id}.ext, etc.). "
+            "The external_assets table is read-only for legacy views.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         try:
             cursor = self.connection.cursor()
             cursor.execute(
@@ -685,6 +704,18 @@ class SQLiteDictionary:
     def delete_asset(
         self, uuid_: str, assetgroup: Literal["word", "image", "shortdef"], sid: int = 0
     ) -> int:
+        """
+        DEPRECATED: Delete an external asset record from the database.
+        
+        This method is deprecated. The external_assets table is no longer actively used
+        for asset tracking. Assets should be deleted from the filesystem directly.
+        """
+        warnings.warn(
+            "delete_asset() is deprecated. The external_assets table is read-only. "
+            "Delete assets from the filesystem directly instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         try:
             cursor = self.connection.cursor()
             cursor.execute(
@@ -698,6 +729,18 @@ class SQLiteDictionary:
             return 0
 
     def delete_assets(self) -> int:
+        """
+        DEPRECATED: Delete all external asset records from the database.
+        
+        This method is deprecated. The external_assets table is no longer actively used
+        for asset tracking. Assets should be deleted from the filesystem directly.
+        """
+        warnings.warn(
+            "delete_assets() is deprecated. The external_assets table is read-only. "
+            "Delete assets from the filesystem directly instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         try:
             cursor = self.connection.cursor()
             cursor.execute("DELETE FROM external_assets")
