@@ -1,9 +1,12 @@
 import os
 import zipfile
+import logging
 from pathlib import Path
 from flask import Flask, request, render_template, redirect, url_for, send_from_directory, flash, jsonify, send_file
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -601,8 +604,204 @@ def build_dictionary():
         flash(f"Dictionary build started with {len(words)} words{level_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
+    # GET request - handle word search if query provided
     backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
-    return render_template("build_dictionary.html", backend=backend)
+    query = request.args.get("query", "").strip()
+    word_data = None
+    tables_exist = False
+    
+    try:
+        if POSTGRES_CONN:
+            from libs.pg_dictionary import PostgresDictionary
+            from libs.sqlite_dictionary import Flags
+            pg_dict = PostgresDictionary()
+            tables_exist = True  # PostgresDictionary ensures schema on init
+            if query:
+                word = pg_dict.get_word_by_text(query)
+                if word:
+                    # Build complete word data with definitions and assets
+                    word_data = {
+                        "word": word.word,
+                        "fl": word.functional_label,
+                        "uuid": word.uuid,
+                        "flags": word.flags,
+                        "level": word.level,
+                        "definitions": [],
+                        "assets": []
+                    }
+                    
+                    # Compute human-readable flag names
+                    try:
+                        flags_obj = Flags.from_int(word.flags or 0)
+                        flags_list = []
+                        if flags_obj.offensive:
+                            flags_list.append("Offensive")
+                        if flags_obj.british:
+                            flags_list.append("British")
+                        if flags_obj.us:
+                            flags_list.append("US")
+                        if flags_obj.old_fashioned:
+                            flags_list.append("Old-fashioned")
+                        if flags_obj.informal:
+                            flags_list.append("Informal")
+                        word_data["flags_list"] = flags_list
+                    except Exception:
+                        word_data["flags_list"] = []
+                    
+                    # Get definitions with sid
+                    shortdefs = pg_dict.get_shortdefs(word.uuid)
+                    for sd in shortdefs:
+                        word_data["definitions"].append({
+                            "sid": sd.id,
+                            "definition": sd.definition
+                        })
+                    
+                    # Check filesystem for generated assets
+                    try:
+                        audio_dir = os.path.join(ASSET_DIR, "audio")
+                        image_dir = os.path.join(ASSET_DIR, "image")
+                        
+                        # Check for word audio
+                        word_audio = f"word_{word.uuid}_0.aac"
+                        if os.path.exists(os.path.join(audio_dir, word_audio)):
+                            # Check if not already in assets from DB
+                            if not any(a["filename"] == word_audio for a in word_data["assets"]):
+                                word_data["assets"].append({
+                                    "assetgroup": "word",
+                                    "sid": 0,
+                                    "package": None,
+                                    "filename": word_audio,
+                                    "source": "filesystem"
+                                })
+                        
+                        # Check for definition audio and images
+                        for sd in shortdefs:
+                            # Check definition audio (variant 0)
+                            def_audio = f"shortdef_{word.uuid}_{sd.id}_0.aac"
+                            if os.path.exists(os.path.join(audio_dir, def_audio)):
+                                if not any(a["filename"] == def_audio for a in word_data["assets"]):
+                                    word_data["assets"].append({
+                                        "assetgroup": "shortdef",
+                                        "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                        "package": None,
+                                        "filename": def_audio,
+                                        "source": "filesystem"
+                                    })
+                            
+                            # Check definition images (both variants)
+                            for variant in range(2):
+                                def_image = f"image_{word.uuid}_{sd.id}_{variant}.png"
+                                if os.path.exists(os.path.join(image_dir, def_image)):
+                                    if not any(a["filename"] == def_image for a in word_data["assets"]):
+                                        word_data["assets"].append({
+                                            "assetgroup": "image",
+                                            "sid": sd.id * 100 + variant,
+                                            "package": None,
+                                            "filename": def_image,
+                                            "source": "filesystem"
+                                        })
+                    except Exception as fs_error:
+                        logger.warning(f"Error checking filesystem for assets: {fs_error}")
+        else:
+            from libs.sqlite_dictionary import SQLiteDictionary, Flags
+            sqlite_dict = SQLiteDictionary()
+            tables_exist = True  # SQLiteDictionary ensures schema on init
+            if query:
+                word = sqlite_dict.get_word_by_text(query)
+                if word:
+                    # Build complete word data with definitions and assets
+                    word_data = {
+                        "word": word.word,
+                        "fl": word.functional_label,
+                        "uuid": word.uuid,
+                        "flags": word.flags,
+                        "level": word.level,
+                        "definitions": [],
+                        "assets": []
+                    }
+                    
+                    # Compute human-readable flag names
+                    try:
+                        flags_obj = Flags.from_int(word.flags or 0)
+                        flags_list = []
+                        if flags_obj.offensive:
+                            flags_list.append("Offensive")
+                        if flags_obj.british:
+                            flags_list.append("British")
+                        if flags_obj.us:
+                            flags_list.append("US")
+                        if flags_obj.old_fashioned:
+                            flags_list.append("Old-fashioned")
+                        if flags_obj.informal:
+                            flags_list.append("Informal")
+                        word_data["flags_list"] = flags_list
+                    except Exception:
+                        word_data["flags_list"] = []
+                    
+                    # Get definitions with sid
+                    shortdefs = sqlite_dict.get_shortdefs(word.uuid)
+                    for sd in shortdefs:
+                        word_data["definitions"].append({
+                            "sid": sd.id,
+                            "definition": sd.definition
+                        })
+                    
+                    # Check filesystem for generated assets
+                    try:
+                        audio_dir = os.path.join(ASSET_DIR, "audio")
+                        image_dir = os.path.join(ASSET_DIR, "image")
+                        
+                        # Check for word audio
+                        word_audio = f"word_{word.uuid}_0.aac"
+                        if os.path.exists(os.path.join(audio_dir, word_audio)):
+                            # Check if not already in assets from DB
+                            if not any(a["filename"] == word_audio for a in word_data["assets"]):
+                                word_data["assets"].append({
+                                    "assetgroup": "word",
+                                    "sid": 0,
+                                    "package": None,
+                                    "filename": word_audio,
+                                    "source": "filesystem"
+                                })
+                        
+                        # Check for definition audio and images
+                        for sd in shortdefs:
+                            # Check definition audio (variant 0)
+                            def_audio = f"shortdef_{word.uuid}_{sd.id}_0.aac"
+                            if os.path.exists(os.path.join(audio_dir, def_audio)):
+                                if not any(a["filename"] == def_audio for a in word_data["assets"]):
+                                    word_data["assets"].append({
+                                        "assetgroup": "shortdef",
+                                        "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                        "package": None,
+                                        "filename": def_audio,
+                                        "source": "filesystem"
+                                    })
+                            
+                            # Check definition images (both variants)
+                            for variant in range(2):
+                                def_image = f"image_{word.uuid}_{sd.id}_{variant}.png"
+                                if os.path.exists(os.path.join(image_dir, def_image)):
+                                    if not any(a["filename"] == def_image for a in word_data["assets"]):
+                                        word_data["assets"].append({
+                                            "assetgroup": "image",
+                                            "sid": sd.id * 100 + variant,
+                                            "package": None,
+                                            "filename": def_image,
+                                            "source": "filesystem"
+                                        })
+                    except Exception as fs_error:
+                        logger.warning(f"Error checking filesystem for assets: {fs_error}")
+    except Exception as e:
+        flash(f"Error searching for word: {e}", "error")
+        import traceback
+        traceback.print_exc()
+    
+    return render_template("build_dictionary.html", 
+                         backend=backend, 
+                         query=query, 
+                         word_data=word_data,
+                         tables_exist=tables_exist)
 
 
 @app.route("/build_dictionary/single", methods=["POST"])
@@ -754,6 +953,25 @@ def get_package_letter_results(letter):
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
+@app.route("/api/download_files")
+def get_download_files():
+    """Get list of available database and package files for download"""
+    try:
+        db_files = [f.name for f in BASE_DIR.glob("*.sqlite") if f.is_file()]
+        pkg_dir = BASE_DIR / PACKAGE_DIR
+        if pkg_dir.exists():
+            package_files = [f.name for f in pkg_dir.glob("package_*.zip") if f.is_file()]
+        else:
+            package_files = []
+        
+        return jsonify({
+            "status": "success",
+            "db_files": sorted(db_files),
+            "package_files": sorted(package_files)
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 @app.route("/download")
 def download():
     db_files = list_db_files()
@@ -771,6 +989,26 @@ def download_file(filename):
         return send_from_directory(BASE_DIR / PACKAGE_DIR, filename, as_attachment=True)
     flash("File not found", "error")
     return redirect(url_for("download"))
+
+@app.route("/asset/<path:filename>")
+def serve_asset(filename):
+    """Serve asset files (audio/images) for preview."""
+    # Check audio directory
+    audio_path = Path(ASSET_DIR) / "audio" / filename
+    if audio_path.exists():
+        return send_from_directory(Path(ASSET_DIR) / "audio", filename)
+    
+    # Check image directory
+    image_path = Path(ASSET_DIR) / "image" / filename
+    if image_path.exists():
+        return send_from_directory(Path(ASSET_DIR) / "image", filename)
+    
+    # Check base asset directory
+    base_path = Path(ASSET_DIR) / filename
+    if base_path.exists():
+        return send_from_directory(ASSET_DIR, filename)
+    
+    return "Asset not found", 404
 
 @app.route("/task_status/<task_id>")
 def task_status(task_id):
@@ -1483,6 +1721,120 @@ def api_celery_clear_queues():
 @app.route("/build_stories")
 def build_stories():
     return render_template("build_stories.html")
+
+@app.route("/view_stories")
+def view_stories():
+    """View existing stories page"""
+    return render_template("view_stories.html")
+
+@app.route("/api/stories")
+def api_get_stories():
+    """Get all stories from database"""
+    try:
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary()
+        
+        stories = db.get_all_stories()
+        
+        return jsonify({
+            "status": "success",
+            "stories": [
+                {
+                    "uuid": story.uuid,
+                    "title": story.title,
+                    "style": story.style,
+                    "grouping": story.grouping,
+                    "difficulty": story.difficulty
+                }
+                for story in stories
+            ]
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/stories/<story_uuid>")
+def api_get_story_detail(story_uuid):
+    """Get detailed story information including paragraphs and words"""
+    try:
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary()
+        
+        # Get story
+        story = db.get_story(story_uuid)
+        if not story:
+            return jsonify({"status": "error", "error": "Story not found"}), 404
+        
+        # Get paragraphs
+        paragraphs = db.get_story_paragraphs(story_uuid)
+        
+        # Get word associations
+        story_words = db.get_story_words(story_uuid)
+        
+        # Fetch word details for each word_uuid
+        words_with_details = []
+        for sw in story_words:
+            word = db.get_word_by_uuid(sw["word_uuid"])
+            if word:
+                words_with_details.append({
+                    "word": {
+                        "word": word.word,
+                        "uuid": word.uuid,
+                        "level": word.level,
+                        "functional_label": word.functional_label
+                    },
+                    "paragraph_index": sw["paragraph_index"]
+                })
+        
+        return jsonify({
+            "status": "success",
+            "story": {
+                "uuid": story.uuid,
+                "title": story.title,
+                "style": story.style,
+                "grouping": story.grouping,
+                "difficulty": story.difficulty
+            },
+            "paragraphs": [
+                {
+                    "paragraph_index": p.paragraph_index,
+                    "paragraph_title": p.paragraph_title,
+                    "content": p.content
+                }
+                for p in paragraphs
+            ],
+            "words": words_with_details
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/stories/<story_uuid>", methods=["DELETE"])
+def api_delete_story(story_uuid):
+    """Delete a story and all associated data"""
+    try:
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary()
+        
+        success = db.delete_story(story_uuid)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Story deleted successfully"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "error": "Story not found"
+            }), 404
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route("/api/choose_words", methods=["POST"])
 def api_choose_words():

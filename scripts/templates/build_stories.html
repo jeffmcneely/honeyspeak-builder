@@ -2,7 +2,12 @@
 
 {% block content %}
 <div class="container mt-4" id="build_stories_container">
-    <h1 id="page_title">📖 Build Stories</h1>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 id="page_title">📖 Build Stories</h1>
+        <a href="{{ url_for('view_stories') }}" class="btn btn-outline-primary">
+            <i class="bi bi-book"></i> View Existing Stories
+        </a>
+    </div>
     
     <div class="row" id="main_row">
         <div class="col-md-8" id="main_column">

@@ -56,6 +56,33 @@
     </div>
 </div>
 
+<!-- Download Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Download Files</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>SQLite Database</h6>
+                        <div id="db-files-container">
+                            <p class="text-muted">Loading database files...</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Package Files</h6>
+                        <div id="package-files-container">
+                            <p class="text-muted">Loading package files...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Package Results Section -->
 <div class="row mt-4">
     <div class="col-12">
@@ -104,6 +131,9 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(function() {
+    // Load download files on page load
+    loadDownloadFiles();
+    
     // Load package results on page load
     loadPackageResults();
     
@@ -124,6 +154,65 @@ $(function() {
         $(this).addClass('active');
     });
 });
+
+function loadDownloadFiles() {
+    $.get('/api/download_files', function(data) {
+        if (data.status === 'error') {
+            $('#db-files-container').html('<div class="alert alert-danger">Error loading files</div>');
+            $('#package-files-container').html('<div class="alert alert-danger">Error loading files</div>');
+            return;
+        }
+        
+        // Display database files
+        if (data.db_files && data.db_files.length > 0) {
+            var dbHtml = '<ul class="list-unstyled">';
+            data.db_files.forEach(function(file) {
+                dbHtml += '<li><a href="/download_file/' + file + '" class="btn btn-sm btn-outline-primary mb-1">';
+                dbHtml += '<i class="bi bi-download"></i> ' + file + '</a></li>';
+            });
+            dbHtml += '</ul>';
+            $('#db-files-container').html(dbHtml);
+        } else {
+            $('#db-files-container').html('<p class="text-muted">No database files available</p>');
+        }
+        
+        // Display package files
+        if (data.package_files && data.package_files.length > 0) {
+            var pkgHtml = '<div class="mb-2">';
+            pkgHtml += '<a href="#" id="download-all-packages" class="btn btn-sm btn-success mb-2">';
+            pkgHtml += '<i class="bi bi-download"></i> Download All</a>';
+            pkgHtml += '</div>';
+            pkgHtml += '<div class="d-flex flex-wrap gap-1">';
+            data.package_files.forEach(function(file) {
+                // Extract short label from filename (e.g., "package_a0.zip" -> "a0")
+                var label = file.replace('package_', '').replace('.zip', '');
+                pkgHtml += '<a href="/download_file/' + file + '" class="btn btn-sm btn-outline-primary">';
+                pkgHtml += label + '</a>';
+            });
+            pkgHtml += '</div>';
+            $('#package-files-container').html(pkgHtml);
+            
+            // Add click handler for download all
+            $('#download-all-packages').click(function(e) {
+                e.preventDefault();
+                data.package_files.forEach(function(file) {
+                    // Create temporary link and trigger download
+                    var link = document.createElement('a');
+                    link.href = '/download_file/' + file;
+                    link.download = file;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+            });
+        } else {
+            $('#package-files-container').html('<p class="text-muted">No package files available</p>');
+        }
+    }).fail(function() {
+        $('#db-files-container').html('<p class="text-muted">No database files available</p>');
+        $('#package-files-container').html('<p class="text-muted">No package files available</p>');
+    });
+}
 
 function loadPackageResults() {
     $.get('/api/package_results', function(data) {

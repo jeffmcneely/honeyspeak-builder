@@ -640,6 +640,33 @@ class PostgresDictionary:
         finally:
             conn.close()
     
+    def delete_story(self, story_uuid: str) -> bool:
+        """
+        Delete a story and all associated data (paragraphs and word references).
+        Returns True if story was deleted, False if it didn't exist.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Check if story exists
+                cursor.execute(
+                    "SELECT COUNT(*) as count FROM stories WHERE uuid = %s",
+                    (story_uuid,)
+                )
+                result = cursor.fetchone()
+                if not result or result[0] == 0:
+                    return False
+                
+                # Delete story (CASCADE will handle paragraphs and word references)
+                cursor.execute(
+                    "DELETE FROM stories WHERE uuid = %s",
+                    (story_uuid,)
+                )
+                conn.commit()
+                return True
+        finally:
+            conn.close()
+    
     def vacuum(self):
         """PostgreSQL doesn't need explicit VACUUM in normal operation."""
         # PostgreSQL auto-vacuum handles this

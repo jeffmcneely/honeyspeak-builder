@@ -94,6 +94,7 @@ def parse_flags(entry: dict) -> Flags:
 def process_api_entry(entry: dict, function_label: str, level: str, db_path: str, original_word: Optional[str] = None) -> Tuple[bool, str]:
     """
     Process a single API entry and add to database.
+    Extracts ALL shortdefs from the API response, not just app-shortdef.
     
     Args:
         entry: Dictionary entry from API
@@ -118,28 +119,62 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
             level = "z1"
             logger.info(f"Word mismatch: requested '{original_word}', got '{word}' - setting level to 'z1'")
         
-        shortdef = meta.get("app-shortdef", None)
-        
-        if shortdef is None or shortdef == []:
-            db.close()
-            return False, f"No shortdef for entry"
-        
-        fl = shortdef.get("fl")
+        # Get functional label from entry's 'fl' field (NOT from app-shortdef)
+        fl = entry.get("fl", function_label)
         uuid = meta.get("uuid")
         flags = parse_flags(entry)
+        
+        # Extract ALL shortdefs from the entry
+        all_shortdefs = []
+        
+        # Method 1: Use app-shortdef if available (quick reference definitions)
+        shortdef = meta.get("app-shortdef", None)
+        if shortdef and isinstance(shortdef, dict):
+            for sd in shortdef.get("def", []):
+                if sd and sd not in all_shortdefs:
+                    all_shortdefs.append(sd)
+        
+        # Method 2: Extract from main 'def' structure (more comprehensive)
+        def_list = entry.get("def", [])
+        for def_item in def_list:
+            sseq_list = def_item.get("sseq", [])
+            for sseq_item in sseq_list:
+                for sense_group in sseq_item:
+                    if isinstance(sense_group, list) and len(sense_group) == 2:
+                        sense_type, sense_data = sense_group
+                        if sense_type == "sense":
+                            # Get definition text from 'dt' (defining text)
+                            dt_list = sense_data.get("dt", [])
+                            for dt_item in dt_list:
+                                if isinstance(dt_item, list) and len(dt_item) >= 2:
+                                    dt_type, dt_content = dt_item[0], dt_item[1]
+                                    if dt_type == "text":
+                                        # Clean up the definition text
+                                        clean_def = dt_content.strip()
+                                        # Remove leading colon or whitespace
+                                        if clean_def.startswith(":"):
+                                            clean_def = clean_def[1:].strip()
+                                        if clean_def and clean_def not in all_shortdefs:
+                                            all_shortdefs.append(clean_def)
+        
+        if not all_shortdefs:
+            db.close()
+            return False, f"No definitions found for entry"
         
         try:
             # Convert Flags object to int for database storage
             db.add_word(word, level, fl, uuid, flags.to_int())
-            logger.info(f"Added word '{word}' with uuid {uuid}")
+            logger.info(f"Added word '{word}' with uuid {uuid}, functional_label='{fl}'")
             
-            if shortdef != []:
-                for sd in shortdef.get("def", []):
-                    db.add_shortdef(uuid, sd)
-                    logger.info(f"Added shortdef for {uuid}: {sd[:50]}...")
+            # Add all shortdefs
+            for sd in all_shortdefs:
+                db.add_shortdef(uuid, sd)
+                logger.info(f"Added shortdef for {uuid}: {sd[:50]}...")
+            
+            logger.info(f"Successfully added {len(all_shortdefs)} definitions for '{word}'")
             
             db.close()
-            return True, f"Successfully processed '{word}'"
+            return True, f"Successfully processed '{word}' with {len(all_shortdefs)} definitions"
         except Exception as e:
             db.close()
             logger.error(f"Error adding word '{word}': {e}")
@@ -147,6 +182,8 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
             
     except Exception as e:
         logger.error(f"Error processing entry: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False, f"Processing error: {e}"
 
 
