@@ -1595,7 +1595,7 @@ def export_database_tables(
         
         # Create temporary local path to avoid SMB locking issues
         import tempfile
-        temp_dir = tempfile.gettempdir()
+        temp_dir = tempfile.mkdtemp()
         temp_db_path = os.path.join(temp_dir, f"db_export_{os.getpid()}.sqlite")
         
         logger.info(f"Exporting database tables from PostgreSQL to temporary location: {temp_db_path}")
