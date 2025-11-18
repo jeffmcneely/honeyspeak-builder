@@ -202,7 +202,7 @@ def encode_image_file(
             [
                 "magick",
                 raw_path,
-                "-resize", "512x768\!",
+                "-resize", r"512x768\!",
                 "-quality", str(quality),
                 output_path,
             ],
