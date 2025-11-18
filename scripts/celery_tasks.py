@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from celery import Celery, Task
 from celery.utils.log import get_task_logger
 from datetime import datetime
+import json
 import re
 
 # Add scripts directory to path so we can import libs
@@ -41,8 +42,9 @@ from libs.package_ops import (
 from libs.dictionary import Dictionary
 
 # Setup logging directory
-LOGS_DIR = Path(__file__).parent.parent / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+STORAGE_DIRECTORY = os.getenv("STORAGE_DIRECTORY", str(Path(__file__).parent.parent))
+LOGS_DIR = Path(STORAGE_DIRECTORY) / "logs"
+LOGS_DIR.mkdir(exist_ok=True, parents=True)
 
 logger = get_task_logger(__name__)
 
@@ -771,194 +773,205 @@ def package_asset_group(
     import glob
     import re
     
-    logger.info(f"Starting asset packaging for letter group: {letter}")
+    # Setup letter-specific log file
+    letter_log_file = LOGS_DIR / f"{letter}.txt"
+    file_handler = logging.FileHandler(letter_log_file)
+    file_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    )
+    logger.addHandler(file_handler)
     
-    # Create package directory if needed
-    os.makedirs(package_dir, exist_ok=True)
-    
-    # Collect all hires files that match the letter pattern from audio/ and image/
-    hires_audio_dir = os.path.join(asset_dir, "audio")
-    hires_image_dir = os.path.join(asset_dir, "image")
-    
-    files_to_process = []
-    
-    # Find audio files in audio/ that start with letter
-    if os.path.exists(hires_audio_dir):
-        # Pattern: word_{uuid}_0.aac where uuid starts with letter
-        word_pattern = os.path.join(hires_audio_dir, f"word_{letter}*.aac")
-        word_files = glob.glob(word_pattern)
+    try:
+        logger.info(f"Starting asset packaging for letter group: {letter}")
         
-        # Pattern: shortdef_{uuid}_{def_id}_{variant}.aac where uuid starts with letter
-        shortdef_pattern = os.path.join(hires_audio_dir, f"shortdef_{letter}*.aac")
-        shortdef_files = glob.glob(shortdef_pattern)
+        # Create package directory if needed
+        os.makedirs(package_dir, exist_ok=True)
+    
+        # Collect all hires files that match the letter pattern from audio/ and image/
+        hires_audio_dir = os.path.join(asset_dir, "audio")
+        hires_image_dir = os.path.join(asset_dir, "image")
         
-        files_to_process.extend([("audio", f) for f in word_files + shortdef_files])
-        logger.info(f"Found {len(word_files)} word audio files, {len(shortdef_files)} shortdef audio files")
-    
-    # Find image files in image/ that start with letter
-    if os.path.exists(hires_image_dir):
-        # Pattern: image_{uuid}_{def_id}_{variant}.png where uuid starts with letter
-        image_pattern = os.path.join(hires_image_dir, f"image_{letter}*.png")
-        image_files = glob.glob(image_pattern)
-        files_to_process.extend([("image", f) for f in image_files])
-        logger.info(f"Found {len(image_files)} image files")
-    
-    logger.info(f"Total files to process for '{letter}': {len(files_to_process)}")
-    
-    # Process each file
-    results = {
-        "letter": letter,
-        "total_files": len(files_to_process),
-        "audio_encoded": 0,
-        "audio_failed": 0,
-        "images_encoded": 0,
-        "images_failed": 0,
-        "files_packaged": 0,
-        "files_skipped": 0
-    }
-    
-    # Temp output directory for encoded files
-    temp_output_dir = os.path.join(asset_dir, "temp")
-    # Ensure temp/{letter}/audio and temp/{letter}/image directories exist
-    temp_audio_dir = os.path.join(temp_output_dir, letter, "audio")
-    temp_image_dir = os.path.join(temp_output_dir, letter, "image")
-    os.makedirs(temp_audio_dir, exist_ok=True)
-    os.makedirs(temp_image_dir, exist_ok=True)
-    
-    for i, (asset_type, filepath) in enumerate(files_to_process):
-        filename = os.path.basename(filepath)
+        files_to_process = []
         
-        # Parse filename to extract uuid and other metadata
-        # Patterns: word_{uuid}_0.aac, shortdef_{uuid}_{def_id}_{variant}.aac, image_{uuid}_{def_id}_{variant}.png
+        # Find audio files in audio/ that start with letter
+        if os.path.exists(hires_audio_dir):
+            # Pattern: word_{uuid}_0.aac where uuid starts with letter
+            word_pattern = os.path.join(hires_audio_dir, f"word_{letter}*.aac")
+            word_files = glob.glob(word_pattern)
+            
+            # Pattern: shortdef_{uuid}_{def_id}_{variant}.aac where uuid starts with letter
+            shortdef_pattern = os.path.join(hires_audio_dir, f"shortdef_{letter}*.aac")
+            shortdef_files = glob.glob(shortdef_pattern)
+            
+            files_to_process.extend([("audio", f) for f in word_files + shortdef_files])
+            logger.info(f"Found {len(word_files)} word audio files, {len(shortdef_files)} shortdef audio files")
         
-        if asset_type == "audio":
-            if filename.startswith("word_"):
-                # word_{uuid}_0.aac
-                match = re.match(r"word_([a-f0-9-]+)_0\.aac", filename)
-                if match:
-                    uuid = match.group(1)
-                    assetgroup = "word"
-                    defn_id = 0
-                    variant = 0
+        # Find image files in image/ that start with letter
+        if os.path.exists(hires_image_dir):
+            # Pattern: image_{uuid}_{def_id}_{variant}.png where uuid starts with letter
+            image_pattern = os.path.join(hires_image_dir, f"image_{letter}*.png")
+            image_files = glob.glob(image_pattern)
+            files_to_process.extend([("image", f) for f in image_files])
+            logger.info(f"Found {len(image_files)} image files")
+        
+        logger.info(f"Total files to process for '{letter}': {len(files_to_process)}")
+        
+        # Process each file
+        results = {
+            "letter": letter,
+            "total_files": len(files_to_process),
+            "audio_encoded": 0,
+            "audio_failed": 0,
+            "images_encoded": 0,
+            "images_failed": 0,
+            "files_packaged": 0,
+            "files_skipped": 0
+        }
+        
+        # Temp output directory for encoded files
+        temp_output_dir = os.path.join(asset_dir, "temp")
+        # Ensure temp/{letter}/audio and temp/{letter}/image directories exist
+        temp_audio_dir = os.path.join(temp_output_dir, letter, "audio")
+        temp_image_dir = os.path.join(temp_output_dir, letter, "image")
+        os.makedirs(temp_audio_dir, exist_ok=True)
+        os.makedirs(temp_image_dir, exist_ok=True)
+        
+        for i, (asset_type, filepath) in enumerate(files_to_process):
+            filename = os.path.basename(filepath)
+            
+            # Parse filename to extract uuid and other metadata
+            # Patterns: word_{uuid}_0.aac, shortdef_{uuid}_{def_id}_{variant}.aac, image_{uuid}_{def_id}_{variant}.png
+            
+            if asset_type == "audio":
+                if filename.startswith("word_"):
+                    # word_{uuid}_0.aac
+                    match = re.match(r"word_([a-f0-9-]+)_0\.aac", filename)
+                    if match:
+                        uuid = match.group(1)
+                        assetgroup = "word"
+                        defn_id = 0
+                        variant = 0
+                    else:
+                        logger.warning(f"Failed to parse word audio filename: {filename}")
+                        results["audio_failed"] += 1
+                        continue
                 else:
-                    logger.warning(f"Failed to parse word audio filename: {filename}")
+                    # Accept both shortdef_{uuid}_{def_id}_{variant}.aac and shortdef_{uuid}_{id}.aac
+                    match = re.match(r"shortdef_([a-f0-9-]+)_(\d+)_(\d+)\.aac", filename)
+                    if match:
+                        uuid = match.group(1)
+                        assetgroup = "shortdef"
+                        defn_id = int(match.group(2))
+                        variant = int(match.group(3))
+                    else:
+                        # Try shortdef_{uuid}_{id}.aac (no variant)
+                        match2 = re.match(r"shortdef_([a-f0-9-]+)_(\d+)\.aac", filename)
+                        if match2:
+                            uuid = match2.group(1)
+                            assetgroup = "shortdef"
+                            defn_id = int(match2.group(2))
+                            variant = 0
+                        else:
+                            logger.warning(f"Failed to parse shortdef audio filename: {filename}")
+                            results["audio_failed"] += 1
+                            continue
+                
+                # Call encode_and_package_audio
+                logger.debug(f"Encoding audio: {filepath}")
+                result = encode_and_package_audio(
+                    input_file=filepath,
+                    output_dir=temp_output_dir,
+                    package_dir=package_dir,
+                    db_path=db_path,
+                    uuid=uuid,
+                    assetgroup=assetgroup,
+                    defn_id=defn_id,
+                    variant=variant
+                )
+                
+                if result["status"] == "success":
+                    results["audio_encoded"] += 1
+                    results["files_packaged"] += 1
+                    logger.debug(f"Encoded and packaged {filename}")
+                elif result["status"] == "skipped":
+                    results["files_skipped"] += 1
+                    logger.debug(f"Skipped already-encoded audio {filename}")
+                else:
                     results["audio_failed"] += 1
-                    continue
-            else:
-                # Accept both shortdef_{uuid}_{def_id}_{variant}.aac and shortdef_{uuid}_{id}.aac
-                match = re.match(r"shortdef_([a-f0-9-]+)_(\d+)_(\d+)\.aac", filename)
+                    logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'z1')}")
+            
+            elif asset_type == "image":
+                # image_{uuid}_{def_id}_{variant}.png
+                match = re.match(r"image_([a-f0-9-]+)_(\d+)_(\d+)\.png", filename)
                 if match:
                     uuid = match.group(1)
-                    assetgroup = "shortdef"
+                    assetgroup = "image"
                     defn_id = int(match.group(2))
                     variant = int(match.group(3))
                 else:
-                    # Try shortdef_{uuid}_{id}.aac (no variant)
-                    match2 = re.match(r"shortdef_([a-f0-9-]+)_(\d+)\.aac", filename)
-                    if match2:
-                        uuid = match2.group(1)
-                        assetgroup = "shortdef"
-                        defn_id = int(match2.group(2))
-                        variant = 0
-                    else:
-                        logger.warning(f"Failed to parse shortdef audio filename: {filename}")
-                        results["audio_failed"] += 1
-                        continue
+                    logger.warning(f"Failed to parse image filename: {filename}")
+                    results["images_failed"] += 1
+                    continue
+                
+                # Call encode_and_package_image
+                logger.debug(f"Encoding image: {filepath}")
+                result = encode_and_package_image(
+                    input_file=filepath,
+                    output_dir=temp_output_dir,
+                    package_dir=package_dir,
+                    db_path=db_path,
+                    uuid=uuid,
+                    assetgroup=assetgroup,
+                    defn_id=defn_id,
+                    variant=variant
+                )
+                
+                if result["status"] == "success":
+                    results["images_encoded"] += 1
+                    results["files_packaged"] += 1
+                    logger.debug(f"Encoded and packaged {filename}")
+                elif result["status"] == "skipped":
+                    results["files_skipped"] += 1
+                    logger.debug(f"Skipped already-encoded image {filename}")
+                else:
+                    results["images_failed"] += 1
+                    logger.warning(f"Failed to encode image {filename}: {result.get('error', 'z1')}")
             
-            # Call encode_and_package_audio
-            logger.debug(f"Encoding audio: {filepath}")
-            result = encode_and_package_audio(
-                input_file=filepath,
-                output_dir=temp_output_dir,
-                package_dir=package_dir,
-                db_path=db_path,
-                uuid=uuid,
-                assetgroup=assetgroup,
-                defn_id=defn_id,
-                variant=variant
-            )
-            
-            if result["status"] == "success":
-                results["audio_encoded"] += 1
-                results["files_packaged"] += 1
-                logger.debug(f"Encoded and packaged {filename}")
-            elif result["status"] == "skipped":
-                results["files_skipped"] += 1
-                logger.debug(f"Skipped already-encoded audio {filename}")
-            else:
-                results["audio_failed"] += 1
-                logger.warning(f"Failed to encode audio {filename}: {result.get('error', 'z1')}")
+            # Update progress
+            if i % 50 == 0:
+                self.update_state(
+                    state='PROGRESS',
+                    meta={
+                        'letter': letter,
+                        'current': i+1,
+                        'total': len(files_to_process),
+                        'audio_encoded': results["audio_encoded"],
+                        'images_encoded': results["images_encoded"]
+                    }
+                )
         
-        elif asset_type == "image":
-            # image_{uuid}_{def_id}_{variant}.png
-            match = re.match(r"image_([a-f0-9-]+)_(\d+)_(\d+)\.png", filename)
-            if match:
-                uuid = match.group(1)
-                assetgroup = "image"
-                defn_id = int(match.group(2))
-                variant = int(match.group(3))
-            else:
-                logger.warning(f"Failed to parse image filename: {filename}")
-                results["images_failed"] += 1
-                continue
-            
-            # Call encode_and_package_image
-            logger.debug(f"Encoding image: {filepath}")
-            result = encode_and_package_image(
-                input_file=filepath,
-                output_dir=temp_output_dir,
-                package_dir=package_dir,
-                db_path=db_path,
-                uuid=uuid,
-                assetgroup=assetgroup,
-                defn_id=defn_id,
-                variant=variant
-            )
-            
-            if result["status"] == "success":
-                results["images_encoded"] += 1
-                results["files_packaged"] += 1
-                logger.debug(f"Encoded and packaged {filename}")
-            elif result["status"] == "skipped":
-                results["files_skipped"] += 1
-                logger.debug(f"Skipped already-encoded image {filename}")
-            else:
-                results["images_failed"] += 1
-                logger.warning(f"Failed to encode image {filename}: {result.get('error', 'z1')}")
+        logger.info(f"Packaging complete for '{letter}': {results}")
         
-        # Update progress
-        if i % 50 == 0:
-            self.update_state(
-                state='PROGRESS',
-                meta={
-                    'letter': letter,
-                    'current': i+1,
-                    'total': len(files_to_process),
-                    'audio_encoded': results["audio_encoded"],
-                    'images_encoded': results["images_encoded"]
-                }
-            )
-    
-    logger.info(f"Packaging complete for '{letter}': {results}")
-    
-    # Save results to {letter}.json in asset_dir
-    try:
-        import json
-        result_file = os.path.join(asset_dir, f"{letter}.json")
-        final_result = {
+        # Save results to {letter}.json in asset_dir
+        try:
+            result_file = os.path.join(asset_dir, f"{letter}.json")
+            final_result = {
+                "status": "success",
+                **results
+            }
+            with open(result_file, 'w') as f:
+                json.dump(final_result, f, indent=2)
+            logger.info(f"Saved results to {result_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save results to JSON: {e}")
+        
+        return {
             "status": "success",
             **results
         }
-        with open(result_file, 'w') as f:
-            json.dump(final_result, f, indent=2)
-        logger.info(f"Saved results to {result_file}")
-    except Exception as e:
-        logger.warning(f"Failed to save results to JSON: {e}")
-    
-    return {
-        "status": "success",
-        **results
-    }
+    finally:
+        # Remove the letter-specific log handler
+        logger.removeHandler(file_handler)
 
 
 @app.task(base=LoggingTask, bind=True)
@@ -1413,12 +1426,18 @@ def package_all_assets(
     
     logger.info(f"All {len(letter_groups)} packaging tasks launched")
     
+    # Also launch database export task to dump PostgreSQL to SQLite
+    logger.info("Launching database export task (PostgreSQL -> SQLite)")
+    export_task = export_database_tables.delay(db_path, asset_dir)
+    logger.info(f"Launched database export task: {export_task.id}")
+    
     return {
         "status": "started",
-        "message": f"Launched {len(letter_groups)} packaging tasks",
+        "message": f"Launched {len(letter_groups)} packaging tasks + 1 database export task",
         "start_time": start_time,
         "letter_groups": letter_groups,
-        "tasks": tasks
+        "tasks": tasks,
+        "export_task_id": export_task.id
     }
 
 
@@ -1551,87 +1570,99 @@ def export_database_tables(
     """
     import sqlite3
     
-    logger.info(f"Exporting database tables from {db_path} to {output_dir}/db.sqlite")
-    
-    # Create output directory if needed
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Path for the exported db
-    export_db_path = os.path.join(output_dir, "db.sqlite")
+    # Setup export-specific log file
+    export_log_file = LOGS_DIR / "export_db.txt"
+    file_handler = logging.FileHandler(export_log_file)
+    file_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    )
+    logger.addHandler(file_handler)
     
     try:
-        # Remove existing db.sqlite if it exists
-        if os.path.exists(export_db_path):
-            os.remove(export_db_path)
-            logger.info(f"Removed existing {export_db_path}")
+        logger.info(f"Exporting database tables from {db_path} to {output_dir}/db.sqlite")
         
-        # Connect to source and export databases
-        source_conn = sqlite3.connect(db_path)
-        export_conn = sqlite3.connect(export_db_path)
+        # Create output directory if needed
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Create the tables in the export database
-        export_conn.execute("""CREATE TABLE words (
-            word TEXT NOT NULL,
-            functional_label TEXT,
-            uuid TEXT PRIMARY KEY,
-            flags INTEGER DEFAULT 0,
-            level TEXT
-        )""")
-        export_conn.execute("""CREATE INDEX idx_words_word ON words(word)""")
-        export_conn.execute("""CREATE INDEX idx_words_level ON words(level)""")
+        # Path for the exported db
+        export_db_path = os.path.join(output_dir, "db.sqlite")
         
-        export_conn.execute("""CREATE TABLE shortdef (
-            uuid TEXT,
-            definition TEXT,
-            id INTEGER PRIMARY KEY,
-            FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-            UNIQUE(uuid, definition)
-        )""")
-        export_conn.execute("""CREATE INDEX idx_shortdef_uuid ON shortdef(uuid)""")
-        
-        # Copy data from source to export
-        source_cursor = source_conn.cursor()
-        export_cursor = export_conn.cursor()
-        
-        # Copy words table
-        source_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words")
-        words_data = source_cursor.fetchall()
-        export_cursor.executemany(
-            "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
-            words_data
-        )
-        logger.info(f"Copied {len(words_data)} words")
-        
-        # Copy shortdef table
-        source_cursor.execute("SELECT uuid, definition, id FROM shortdef")
-        shortdef_data = source_cursor.fetchall()
-        export_cursor.executemany(
-            "INSERT INTO shortdef (uuid, definition, id) VALUES (?, ?, ?)",
-            shortdef_data
-        )
-        logger.info(f"Copied {len(shortdef_data)} definitions")
-        
-        # Commit and close
-        export_conn.commit()
-        source_conn.close()
-        export_conn.close()
-        
-        export_size = os.path.getsize(export_db_path)
-        logger.info(f"Successfully exported to {export_db_path} ({export_size:,} bytes)")
-        
-        return {
-            "status": "success",
-            "export_path": export_db_path,
-            "words_count": len(words_data),
-            "definitions_count": len(shortdef_data),
-            "file_size": export_size
-        }
-    except Exception as e:
-        logger.error(f"Error exporting database tables: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        try:
+            # Remove existing db.sqlite if it exists
+            if os.path.exists(export_db_path):
+                os.remove(export_db_path)
+                logger.info(f"Removed existing {export_db_path}")
+            
+            # Connect to source and export databases
+            source_conn = sqlite3.connect(db_path)
+            export_conn = sqlite3.connect(export_db_path)
+            
+            # Create the tables in the export database
+            export_conn.execute("""CREATE TABLE words (
+                word TEXT NOT NULL,
+                functional_label TEXT,
+                uuid TEXT PRIMARY KEY,
+                flags INTEGER DEFAULT 0,
+                level TEXT
+            )""")
+            export_conn.execute("""CREATE INDEX idx_words_word ON words(word)""")
+            export_conn.execute("""CREATE INDEX idx_words_level ON words(level)""")
+            
+            export_conn.execute("""CREATE TABLE shortdef (
+                uuid TEXT,
+                definition TEXT,
+                id INTEGER PRIMARY KEY,
+                FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
+                UNIQUE(uuid, definition)
+            )""")
+            export_conn.execute("""CREATE INDEX idx_shortdef_uuid ON shortdef(uuid)""")
+            
+            # Copy data from source to export
+            source_cursor = source_conn.cursor()
+            export_cursor = export_conn.cursor()
+            
+            # Copy words table
+            source_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words")
+            words_data = source_cursor.fetchall()
+            export_cursor.executemany(
+                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
+                words_data
+            )
+            logger.info(f"Copied {len(words_data)} words")
+            
+            # Copy shortdef table
+            source_cursor.execute("SELECT uuid, definition, id FROM shortdef")
+            shortdef_data = source_cursor.fetchall()
+            export_cursor.executemany(
+                "INSERT INTO shortdef (uuid, definition, id) VALUES (?, ?, ?)",
+                shortdef_data
+            )
+            logger.info(f"Copied {len(shortdef_data)} definitions")
+            
+            # Commit and close
+            export_conn.commit()
+            source_conn.close()
+            export_conn.close()
+            
+            export_size = os.path.getsize(export_db_path)
+            logger.info(f"Successfully exported to {export_db_path} ({export_size:,} bytes)")
+            
+            return {
+                "status": "success",
+                "export_path": export_db_path,
+                "words_count": len(words_data),
+                "definitions_count": len(shortdef_data),
+                "file_size": export_size
+            }
+        except Exception as e:
+            logger.error(f"Error exporting database tables: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    finally:
+        # Remove the export-specific log handler
+        logger.removeHandler(file_handler)
 
 
 @app.task(base=LoggingTask, bind=True)
@@ -1769,6 +1800,7 @@ def rename_image_variant(self, asset_dir: str, uuid: str, def_id: int) -> Dict:
     except Exception as e:
         logger.error(f"[RENAME_VARIANT] ERROR in rename_image_variant: {e}")
         import traceback
+        import json
         logger.error(f"[RENAME_VARIANT] Traceback: {traceback.format_exc()}")
         # Fail silently - return success status to avoid alerting
         return {

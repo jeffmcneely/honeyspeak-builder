@@ -17,7 +17,8 @@ from celery_tasks import celery_app as celery
 # Use templates and static folders
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-LOGS_DIR = Path(__file__).parent.parent / "logs"
+STORAGE_DIRECTORY_PATH = os.environ.get("STORAGE_DIRECTORY", str(Path(__file__).parent.parent))
+LOGS_DIR = Path(STORAGE_DIRECTORY_PATH) / "logs"
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
@@ -302,7 +303,10 @@ def list_log_files():
     """List all log files in logs directory."""
     if not LOGS_DIR.exists():
         return []
-    return sorted([f for f in LOGS_DIR.glob("*.log") if f.is_file()], key=lambda x: x.stat().st_mtime, reverse=True)
+    # Include both .log and .txt files
+    log_files = [f for f in LOGS_DIR.glob("*.log") if f.is_file()]
+    txt_files = [f for f in LOGS_DIR.glob("*.txt") if f.is_file()]
+    return sorted(log_files + txt_files, key=lambda x: x.stat().st_mtime, reverse=True)
 
 # Routes
 @app.route("/")
@@ -1071,6 +1075,22 @@ def download_log(filename):
         return redirect(url_for("logs"))
     
     return send_file(log_path, as_attachment=True, download_name=filename)
+
+
+@app.route("/logs/<filename>/content")
+def get_log_content(filename):
+    """AJAX endpoint to get log file content."""
+    log_path = LOGS_DIR / secure_filename(filename)
+    
+    if not log_path.exists() or not log_path.is_file():
+        return jsonify({"error": "Log file not found"}), 404
+    
+    try:
+        with open(log_path, "r") as f:
+            content = f.read()
+        return jsonify({"content": content, "filename": filename})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/database", methods=["GET", "POST"])

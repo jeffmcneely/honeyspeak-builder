@@ -3,37 +3,303 @@
 {% block title %}Logs{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-    <h1>📋 Log Files</h1>
-    <p class="text-muted">View task execution logs</p>
-    
-    {% if log_files %}
-    <div class="list-group mt-4">
-        {% for log_file in log_files %}
-        <a href="{{ url_for('view_log', filename=log_file.name) }}" class="list-group-item list-group-item-action">
-            <div class="d-flex w-100 justify-content-between">
-                <h5 class="mb-1">{{ log_file.name }}</h5>
-                <small>{{ log_file.stat().st_size | filesizeformat }}</small>
+<div class="container-fluid mt-5">
+    <div class="row">
+        <!-- Left sidebar: Log file list -->
+        <div class="col-md-3">
+            <h1>📋 Log Files</h1>
+            <p class="text-muted">View task execution logs</p>
+            
+            <div class="mb-3">
+                <select id="sort-select" class="form-select form-select-sm">
+                    <option value="date-desc">Date (Newest First)</option>
+                    <option value="date-asc">Date (Oldest First)</option>
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="name-desc">Name (Z-A)</option>
+                    <option value="size-desc">Size (Largest First)</option>
+                    <option value="size-asc">Size (Smallest First)</option>
+                </select>
             </div>
-            <small class="text-muted">
-                Modified: {{ log_file.stat().st_mtime | timestamp_to_datetime }}
-            </small>
-        </a>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="alert alert-info mt-4">
-        <p class="mb-0">No log files found.</p>
-    </div>
-    {% endif %}
-    
-    <div class="mt-4">
-        <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Home</a>
+            
+            {% if log_files %}
+            <div class="list-group mt-2" id="log-file-list">
+                {% for log_file in log_files %}
+                <a href="#" 
+                   class="list-group-item list-group-item-action log-file-link" 
+                   data-filename="{{ log_file.name }}"
+                   data-size="{{ log_file.stat().st_size }}"
+                   data-mtime="{{ log_file.stat().st_mtime }}"
+                   title="{{ log_file.name }}">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1 text-truncate" style="max-width: 200px;">{{ log_file.name }}</h6>
+                        <small>{{ log_file.stat().st_size | filesizeformat }}</small>
+                    </div>
+                    <small class="text-muted">
+                        {{ log_file.stat().st_mtime | timestamp_to_datetime }}
+                    </small>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-info mt-4">
+                <p class="mb-0">No log files found.</p>
+            </div>
+            {% endif %}
+            
+            <div class="mt-4">
+                <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">← Back to Home</a>
+            </div>
+        </div>
+        
+        <!-- Right panel: Log viewer -->
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="current-log-title">Select a log file to view</h5>
+                    <div>
+                        <div class="form-check form-check-inline" style="display: none;" id="auto-refresh-container">
+                            <input class="form-check-input" type="checkbox" id="auto-refresh-checkbox" checked>
+                            <label class="form-check-label" for="auto-refresh-checkbox">
+                                Auto-refresh (5s)
+                            </label>
+                        </div>
+                        <button id="refresh-log-btn" class="btn btn-sm btn-primary" style="display: none;">
+                            🔄 Refresh
+                        </button>
+                        <a id="download-log-btn" href="#" class="btn btn-sm btn-success" style="display: none;">
+                            ⬇️ Download
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <textarea 
+                        id="log-content" 
+                        class="form-control" 
+                        readonly 
+                        style="font-family: 'Courier New', monospace; font-size: 12px; height: 70vh; resize: none; border: none;"
+                        placeholder="Click on a log file from the list to view its contents..."></textarea>
+                </div>
+                <div class="card-footer text-muted">
+                    <small id="log-status">Ready</small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- Custom filters for Jinja2 -->
 <script>
-// This template uses custom filters that need to be registered in Flask
+document.addEventListener('DOMContentLoaded', function() {
+    const logContent = document.getElementById('log-content');
+    const logTitle = document.getElementById('current-log-title');
+    const logStatus = document.getElementById('log-status');
+    const refreshBtn = document.getElementById('refresh-log-btn');
+    const downloadBtn = document.getElementById('download-log-btn');
+    const autoRefreshCheckbox = document.getElementById('auto-refresh-checkbox');
+    const autoRefreshContainer = document.getElementById('auto-refresh-container');
+    const sortSelect = document.getElementById('sort-select');
+    const logFileList = document.getElementById('log-file-list');
+    let currentFilename = null;
+    let autoRefreshInterval = null;
+    
+    // Store original log files data
+    const logFiles = [];
+    document.querySelectorAll('.log-file-link').forEach(link => {
+        logFiles.push({
+            element: link.cloneNode(true),
+            name: link.dataset.filename,
+            size: parseInt(link.dataset.size),
+            mtime: parseInt(link.dataset.mtime)
+        });
+    });
+    
+    // Function to sort and render log files
+    function sortLogFiles(sortBy) {
+        let sorted = [...logFiles];
+        
+        switch(sortBy) {
+            case 'date-desc':
+                sorted.sort((a, b) => b.mtime - a.mtime);
+                break;
+            case 'date-asc':
+                sorted.sort((a, b) => a.mtime - b.mtime);
+                break;
+            case 'name-asc':
+                sorted.sort((a, b) => a.name.localeCompare(b.name));
+                break;
+            case 'name-desc':
+                sorted.sort((a, b) => b.name.localeCompare(a.name));
+                break;
+            case 'size-desc':
+                sorted.sort((a, b) => b.size - a.size);
+                break;
+            case 'size-asc':
+                sorted.sort((a, b) => a.size - b.size);
+                break;
+        }
+        
+        // Clear and repopulate list
+        logFileList.innerHTML = '';
+        sorted.forEach(item => {
+            const link = item.element.cloneNode(true);
+            // Re-attach click handler
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const filename = this.dataset.filename;
+                
+                // Update active state
+                document.querySelectorAll('.log-file-link').forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+                
+                loadLogContent(filename, true);
+                
+                // Restart auto-refresh if enabled
+                if (autoRefreshCheckbox.checked) {
+                    startAutoRefresh();
+                }
+            });
+            logFileList.appendChild(link);
+        });
+    }
+    
+    // Sort select handler
+    sortSelect.addEventListener('change', function() {
+        sortLogFiles(this.value);
+    });
+    
+    // Function to load log content
+    function loadLogContent(filename, scrollToBottom = true) {
+        currentFilename = filename;
+        logStatus.textContent = 'Loading...';
+        
+        // Only show "Loading..." text on first load
+        if (!logContent.value || logContent.value === 'Click on a log file from the list to view its contents...') {
+            logContent.value = 'Loading log file...';
+        }
+        
+        fetch(`/logs/${filename}/content`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load log file');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const previousScrollPos = logContent.scrollTop;
+                const wasAtBottom = logContent.scrollHeight - logContent.scrollTop === logContent.clientHeight;
+                
+                logContent.value = data.content;
+                logTitle.textContent = filename;
+                logStatus.textContent = `Loaded ${filename} (${data.content.length} bytes) - Last updated: ${new Date().toLocaleTimeString()}`;
+                refreshBtn.style.display = 'inline-block';
+                downloadBtn.style.display = 'inline-block';
+                autoRefreshContainer.style.display = 'inline-block';
+                downloadBtn.href = `/logs/${filename}/download`;
+                
+                // Scroll to bottom on initial load or if user was at bottom, otherwise maintain position
+                if (scrollToBottom || wasAtBottom) {
+                    logContent.scrollTop = logContent.scrollHeight;
+                } else {
+                    logContent.scrollTop = previousScrollPos;
+                }
+            })
+            .catch(error => {
+                logContent.value = `Error loading log file: ${error.message}`;
+                logStatus.textContent = 'Error loading file';
+                console.error('Error:', error);
+            });
+    }
+    
+    // Function to start auto-refresh
+    function startAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+        autoRefreshInterval = setInterval(() => {
+            if (currentFilename && autoRefreshCheckbox.checked) {
+                loadLogContent(currentFilename, false);
+            }
+        }, 5000); // 5 seconds
+    }
+    
+    // Function to stop auto-refresh
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+    
+    // Refresh button handler
+    refreshBtn.addEventListener('click', function() {
+        if (currentFilename) {
+            loadLogContent(currentFilename, false);
+        }
+    });
+    
+    // Auto-refresh checkbox handler
+    autoRefreshCheckbox.addEventListener('change', function() {
+        if (this.checked && currentFilename) {
+            startAutoRefresh();
+            logStatus.textContent += ' (auto-refresh enabled)';
+        } else {
+            stopAutoRefresh();
+            logStatus.textContent = logStatus.textContent.replace(' (auto-refresh enabled)', '');
+        }
+    });
+    
+    // Initial sort
+    sortLogFiles('date-desc');
+    
+    // Auto-load first log file if available
+    setTimeout(() => {
+        const firstLogLink = document.querySelector('.log-file-link');
+        if (firstLogLink) {
+            firstLogLink.click();
+        }
+    }, 100);
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        stopAutoRefresh();
+    });
+});
 </script>
+
+<style>
+.log-file-link {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.log-file-link:hover {
+    background-color: #f8f9fa;
+}
+
+.log-file-link.active {
+    background-color: #007bff;
+    color: white;
+}
+
+.log-file-link.active small {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+#log-content::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#log-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+#log-content::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 5px;
+}
+
+#log-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+</style>
 {% endblock %}
