@@ -33,6 +33,8 @@ env:
   # as an alias for backwards compatibility.
   POSTGRES_CONNECTION: ""
   POSTGRES_CONN: ""
+  # Enable debug timing logs for performance analysis (set to "1" or "true")
+  DEBUG_TIMING: "0"
 
 storage:
   mountPath: "/data"
