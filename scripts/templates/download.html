@@ -10,15 +10,23 @@
     <h2>Download Results</h2>
     <h3>SQLite Databases</h3>
     <ul>
-      {% for f in db_files %}
-        <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a></li>
-      {% endfor %}
+      {% if db_files %}
+        {% for f in db_files %}
+          <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a> ({{ f.stat().st_size | filesizeformat }})</li>
+        {% endfor %}
+      {% else %}
+        <li>No database files available</li>
+      {% endif %}
     </ul>
     <h3>Package Files</h3>
     <ul>
-      {% for f in pkg_files %}
-        <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a></li>
-      {% endfor %}
+      {% if pkg_files %}
+        {% for f in pkg_files %}
+          <li><a href="{{ url_for('download_file', filename=f.name) }}">{{ f.name }}</a> ({{ f.stat().st_size | filesizeformat }})</li>
+        {% endfor %}
+      {% else %}
+        <li>No package files available</li>
+      {% endif %}
     </ul>
     <a href="/">Back</a>
   </div>

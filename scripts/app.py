@@ -297,7 +297,13 @@ def view_tests_delete_answer():
     return [f for f in pkg_dir.glob("package_*.zip") if f.is_file()]
 
 def list_db_files():
-    return [f for f in BASE_DIR.glob("*.sqlite") if f.is_file()]
+    """List SQLite database files from PACKAGE_DIR (assets directory)."""
+    pkg_dir = Path(PACKAGE_DIR)
+    if not pkg_dir.exists():
+        return []
+    # Look for db.sqlite in the package directory
+    db_files = [f for f in pkg_dir.glob("*.sqlite") if f.is_file()]
+    return db_files
 
 def list_log_files():
     """List all log files in logs directory."""
@@ -973,12 +979,14 @@ def get_package_letter_results(letter):
 def get_download_files():
     """Get list of available database and package files for download"""
     try:
-        db_files = [f.name for f in BASE_DIR.glob("*.sqlite") if f.is_file()]
-        pkg_dir = BASE_DIR / PACKAGE_DIR
+        pkg_dir = Path(PACKAGE_DIR)
+        db_files = []
+        package_files = []
+        
         if pkg_dir.exists():
+            # Look for db.sqlite in package directory
+            db_files = [f.name for f in pkg_dir.glob("*.sqlite") if f.is_file()]
             package_files = [f.name for f in pkg_dir.glob("package_*.zip") if f.is_file()]
-        else:
-            package_files = []
         
         return jsonify({
             "status": "success",
@@ -996,13 +1004,14 @@ def download():
 
 @app.route("/download_file/<path:filename>")
 def download_file(filename):
-    # Serve from base dir or package dir
+    # Serve from package dir first (where db.sqlite and package zips are)
+    pkg_path = Path(PACKAGE_DIR) / filename
+    if pkg_path.exists():
+        return send_from_directory(PACKAGE_DIR, filename, as_attachment=True)
+    # Fallback to base dir for legacy files
     fpath = BASE_DIR / filename
     if fpath.exists():
         return send_from_directory(BASE_DIR, filename, as_attachment=True)
-    pkg_path = BASE_DIR / PACKAGE_DIR / filename
-    if pkg_path.exists():
-        return send_from_directory(BASE_DIR / PACKAGE_DIR, filename, as_attachment=True)
     flash("File not found", "error")
     return redirect(url_for("download"))
 

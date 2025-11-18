@@ -1557,18 +1557,20 @@ def export_database_tables(
     output_dir: str
 ) -> Dict:
     """
-    Export words and shortdef tables to output_dir/db.sqlite.
+    Export words and shortdef tables from PostgreSQL to STORAGE_DIRECTORY/assets/db.sqlite.
     This creates a lightweight database containing only the dictionary data
     without assets or other tables.
     
     Args:
-        db_path: Path to source database
-        output_dir: Directory where db.sqlite will be created (typically 'assets')
+        db_path: Ignored (kept for compatibility) - reads from PostgreSQL via POSTGRES_CONNECTION env var
+        output_dir: Ignored (kept for compatibility) - writes to STORAGE_DIRECTORY/assets/db.sqlite
     
     Returns:
         Dict with export results
     """
     import sqlite3
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
     
     # Setup export-specific log file
     export_log_file = LOGS_DIR / "export_db.txt"
@@ -1579,23 +1581,39 @@ def export_database_tables(
     logger.addHandler(file_handler)
     
     try:
-        logger.info(f"Exporting database tables from {db_path} to {output_dir}/db.sqlite")
+        # Get PostgreSQL connection string
+        pg_conn_str = os.getenv("POSTGRES_CONNECTION") or os.getenv("POSTGRES_CONN")
+        if not pg_conn_str:
+            error_msg = "POSTGRES_CONNECTION environment variable not set"
+            logger.error(error_msg)
+            return {"status": "error", "error": error_msg}
         
-        # Create output directory if needed
-        os.makedirs(output_dir, exist_ok=True)
+        # Determine output path: STORAGE_DIRECTORY/assets/db.sqlite
+        storage_dir = os.getenv("STORAGE_DIRECTORY", str(Path(__file__).parent.parent))
+        assets_dir = os.path.join(storage_dir, "assets")
+        export_db_path = os.path.join(assets_dir, "db.sqlite")
         
-        # Path for the exported db
-        export_db_path = os.path.join(output_dir, "db.sqlite")
+        # Create temporary local path to avoid SMB locking issues
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_db_path = os.path.join(temp_dir, f"db_export_{os.getpid()}.sqlite")
+        
+        logger.info(f"Exporting database tables from PostgreSQL to temporary location: {temp_db_path}")
+        logger.info(f"Will copy to final destination: {export_db_path}")
         
         try:
-            # Remove existing db.sqlite if it exists
-            if os.path.exists(export_db_path):
-                os.remove(export_db_path)
-                logger.info(f"Removed existing {export_db_path}")
+            # Remove existing temp file if it exists
+            if os.path.exists(temp_db_path):
+                os.remove(temp_db_path)
+                logger.info(f"Removed existing temp file: {temp_db_path}")
             
-            # Connect to source and export databases
-            source_conn = sqlite3.connect(db_path)
-            export_conn = sqlite3.connect(export_db_path)
+            # Connect to PostgreSQL source database
+            pg_conn = psycopg2.connect(pg_conn_str)
+            pg_cursor = pg_conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Connect to SQLite export database (local temp location)
+            export_conn = sqlite3.connect(temp_db_path)
+            export_cursor = export_conn.cursor()
             
             # Create the tables in the export database
             export_conn.execute("""CREATE TABLE words (
@@ -1617,35 +1635,71 @@ def export_database_tables(
             )""")
             export_conn.execute("""CREATE INDEX idx_shortdef_uuid ON shortdef(uuid)""")
             
-            # Copy data from source to export
-            source_cursor = source_conn.cursor()
-            export_cursor = export_conn.cursor()
+            # Copy words table from PostgreSQL
+            logger.info("Fetching words from PostgreSQL...")
+            pg_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words ORDER BY word")
+            words_data = pg_cursor.fetchall()
             
-            # Copy words table
-            source_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words")
-            words_data = source_cursor.fetchall()
+            # Convert dict rows to tuples for SQLite
+            words_tuples = [(row['word'], row['functional_label'], row['uuid'], row['flags'], row['level']) 
+                           for row in words_data]
+            
             export_cursor.executemany(
                 "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
-                words_data
+                words_tuples
             )
-            logger.info(f"Copied {len(words_data)} words")
+            logger.info(f"Copied {len(words_data)} words from PostgreSQL")
             
-            # Copy shortdef table
-            source_cursor.execute("SELECT uuid, definition, id FROM shortdef")
-            shortdef_data = source_cursor.fetchall()
+            # Copy shortdef table from PostgreSQL
+            logger.info("Fetching definitions from PostgreSQL...")
+            pg_cursor.execute("SELECT uuid, definition, id FROM shortdef ORDER BY id")
+            shortdef_data = pg_cursor.fetchall()
+            
+            # Convert dict rows to tuples for SQLite
+            shortdef_tuples = [(row['uuid'], row['definition'], row['id']) 
+                              for row in shortdef_data]
+            
             export_cursor.executemany(
                 "INSERT INTO shortdef (uuid, definition, id) VALUES (?, ?, ?)",
-                shortdef_data
+                shortdef_tuples
             )
-            logger.info(f"Copied {len(shortdef_data)} definitions")
+            logger.info(f"Copied {len(shortdef_data)} definitions from PostgreSQL")
             
             # Commit and close
             export_conn.commit()
-            source_conn.close()
             export_conn.close()
+            pg_cursor.close()
+            pg_conn.close()
+            
+            # Get size of local temp file
+            temp_size = os.path.getsize(temp_db_path)
+            logger.info(f"Successfully created temp database: {temp_db_path} ({temp_size:,} bytes)")
+            
+            # Create output directory if needed
+            os.makedirs(assets_dir, exist_ok=True)
+            
+            # Remove existing db.sqlite in destination if it exists
+            if os.path.exists(export_db_path):
+                try:
+                    os.remove(export_db_path)
+                    logger.info(f"Removed existing {export_db_path}")
+                except Exception as e:
+                    logger.warning(f"Could not remove existing file (may be locked): {e}")
+            
+            # Copy temp file to final destination
+            import shutil
+            logger.info(f"Copying {temp_db_path} to {export_db_path}")
+            shutil.copy2(temp_db_path, export_db_path)
             
             export_size = os.path.getsize(export_db_path)
-            logger.info(f"Successfully exported to {export_db_path} ({export_size:,} bytes)")
+            logger.info(f"Successfully copied to {export_db_path} ({export_size:,} bytes)")
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_db_path)
+                logger.info(f"Removed temp file: {temp_db_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temp file: {e}")
             
             return {
                 "status": "success",
@@ -1656,6 +1710,13 @@ def export_database_tables(
             }
         except Exception as e:
             logger.error(f"Error exporting database tables: {e}", exc_info=True)
+            # Clean up temp file on error
+            try:
+                if os.path.exists(temp_db_path):
+                    os.remove(temp_db_path)
+                    logger.info(f"Cleaned up temp file after error: {temp_db_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Could not clean up temp file: {cleanup_error}")
             return {
                 "status": "error",
                 "error": str(e)
