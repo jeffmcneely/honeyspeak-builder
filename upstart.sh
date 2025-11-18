@@ -246,6 +246,7 @@ EOF
       
       # Process env vars - only process lines that are not blank, not comments, and match KEY=VALUE
       ENV_COUNT=0
+      # Include CELERY_BROKER_URL and CELERY_RESULT_BACKEND explicitly
       grep -v '^#' .env | grep -v '^$' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=.*' | while IFS='=' read -r key value; do
         # Remove leading/trailing whitespace from key and value
         key=$(echo "$key" | xargs)

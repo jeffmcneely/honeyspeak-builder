@@ -669,6 +669,8 @@ def build_dictionary():
                                 word_data["assets"].append({
                                     "assetgroup": "word",
                                     "sid": 0,
+                                    "definition_id": 0,
+                                    "variant": 0,
                                     "package": None,
                                     "filename": word_audio,
                                     "source": "filesystem"
@@ -683,6 +685,8 @@ def build_dictionary():
                                     word_data["assets"].append({
                                         "assetgroup": "shortdef",
                                         "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                        "definition_id": sd.id,
+                                        "variant": 0,
                                         "package": None,
                                         "filename": def_audio,
                                         "source": "filesystem"
@@ -696,6 +700,8 @@ def build_dictionary():
                                         word_data["assets"].append({
                                             "assetgroup": "image",
                                             "sid": sd.id * 100 + variant,
+                                            "definition_id": sd.id,
+                                            "variant": variant,
                                             "package": None,
                                             "filename": def_image,
                                             "source": "filesystem"
@@ -759,6 +765,8 @@ def build_dictionary():
                                 word_data["assets"].append({
                                     "assetgroup": "word",
                                     "sid": 0,
+                                    "definition_id": 0,
+                                    "variant": 0,
                                     "package": None,
                                     "filename": word_audio,
                                     "source": "filesystem"
@@ -773,6 +781,8 @@ def build_dictionary():
                                     word_data["assets"].append({
                                         "assetgroup": "shortdef",
                                         "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                        "definition_id": sd.id,
+                                        "variant": 0,
                                         "package": None,
                                         "filename": def_audio,
                                         "source": "filesystem"
@@ -786,6 +796,8 @@ def build_dictionary():
                                         word_data["assets"].append({
                                             "assetgroup": "image",
                                             "sid": sd.id * 100 + variant,
+                                            "definition_id": sd.id,
+                                            "variant": variant,
                                             "package": None,
                                             "filename": def_image,
                                             "source": "filesystem"

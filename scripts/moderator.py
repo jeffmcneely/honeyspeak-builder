@@ -110,12 +110,14 @@ def scan_asset_directory_to_redis(asset_dir: str) -> int:
             print(f"[TIMING] scan_asset_directory_to_redis: asset_dir not found: {asset_dir}")
         return 0
     
-    # Find all image files matching the pattern
+    # Find all image files matching the pattern (recursively scan subdirectories)
     image_files = set()
     for ext in ALLOWED_EXTS:
-        for img_path in p.glob(f"image_*{ext}"):
+        for img_path in p.rglob(f"image_*{ext}"):
             if SAFE_IMAGE_RE.match(img_path.name):
-                image_files.add(img_path.name)
+                # Store relative path from asset_dir to support subdirectories
+                rel_path = str(img_path.relative_to(p))
+                image_files.add(rel_path)
     
     # Store as a Redis set for O(1) membership checks
     if image_files:
@@ -160,6 +162,9 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
     """
     t0 = time.time() if DEBUG_TIMING else None
     
+    # DEBUG: Always log what we're searching for
+    print(f"[MODERATOR DEBUG] list_images_for: uuid={uuid}, sid={sid}, asset_dir={asset_dir}")
+    
     # Try to get all images from Redis cache first
     all_images = get_cached_images()
     
@@ -172,25 +177,38 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
         if not asset_dir:
             asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
         
+        print(f"[MODERATOR DEBUG] Filesystem fallback: asset_dir={asset_dir}")
+        
         # Direct filesystem check for this specific uuid/sid
         p = Path(asset_dir)
         if not p.exists():
+            print(f"[MODERATOR DEBUG] Asset directory does not exist: {asset_dir}")
             return []
+        
+        print(f"[MODERATOR DEBUG] Asset directory exists, searching for image_{uuid}_{sid}.*")
         
         files = []
         base = f"image_{uuid}_{sid}"
         
-        # Check exact matches
+        # Check exact matches (search recursively in subdirectories)
         for ext in ALLOWED_EXTS:
             fname = f"{base}{ext}"
-            if (p / fname).exists() and SAFE_IMAGE_RE.match(fname):
-                files.append(fname)
+            for img_path in p.rglob(fname):
+                if SAFE_IMAGE_RE.match(img_path.name):
+                    rel_path = str(img_path.relative_to(p))
+                    files.append(rel_path)
         
         # Check numbered variants (e.g., image_uuid_sid_1.png)
         prefix = f"{base}_"
-        for img_path in p.glob(f"{prefix}*"):
-            if SAFE_IMAGE_RE.match(img_path.name) and img_path.name not in files:
-                files.append(img_path.name)
+        for img_path in p.rglob(f"{prefix}*"):
+            if SAFE_IMAGE_RE.match(img_path.name):
+                rel_path = str(img_path.relative_to(p))
+                if rel_path not in files:
+                    files.append(rel_path)
+        
+        print(f"[MODERATOR DEBUG] Filesystem scan found {len(files)} images for {uuid}_{sid}")
+        if files:
+            print(f"[MODERATOR DEBUG] Found files: {files}")
         
         if DEBUG_TIMING:
             total_time = time.time() - t0
@@ -202,17 +220,21 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
     base = f"image_{uuid}_{sid}"
     files = []
     
-    # Exact matches
-    for ext in ALLOWED_EXTS:
-        fname = f"{base}{ext}"
-        if fname in all_images:
-            files.append(fname)
-    
-    # Numbered variants
-    prefix = f"{base}_"
-    for fname in all_images:
-        if fname.startswith(prefix) and fname not in files:
-            files.append(fname)
+    # Check all cached paths (could be just filename or path with subdirs)
+    for cached_path in all_images:
+        # Extract just the filename from the path
+        cached_filename = Path(cached_path).name
+        
+        # Exact matches
+        for ext in ALLOWED_EXTS:
+            target_fname = f"{base}{ext}"
+            if cached_filename == target_fname and cached_path not in files:
+                files.append(cached_path)
+        
+        # Numbered variants
+        prefix = f"{base}_"
+        if cached_filename.startswith(prefix) and SAFE_IMAGE_RE.match(cached_filename) and cached_path not in files:
+            files.append(cached_path)
     
     if DEBUG_TIMING:
         total_time = time.time() - t0
@@ -229,6 +251,8 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None, functi
         starting_letter: Filter words by starting letter (case-insensitive). Use '-' for non-alphabetic.
     """
     overall_start = time.time() if DEBUG_TIMING else None
+    
+    print(f"[MODERATOR DEBUG] collect_rows_with_images: asset_dir={asset_dir}, starting_letter={starting_letter}, function_label={function_label}")
     
     # Try to ensure Redis cache is populated (if Redis is available)
     redis = get_redis_client()
@@ -272,6 +296,9 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None, functi
         query_start = time.time() if DEBUG_TIMING else None
         results = db.get_all_definitions_with_words(starting_letter=starting_letter, function_label=function_label)
         query_time = time.time() - query_start if DEBUG_TIMING else 0
+        print(f"[MODERATOR DEBUG] SQL query returned {len(results)} definitions")
+        if results and len(results) > 0:
+            print(f"[MODERATOR DEBUG] First result: word={results[0]['word']}, uuid={results[0]['uuid']}, def_id={results[0]['def_id']}")
         if DEBUG_TIMING:
             print(f"[TIMING] SQL query returned {len(results)} definitions in {query_time:.4f}s")
         lookup_start = time.time() if DEBUG_TIMING else None
@@ -431,60 +458,95 @@ def clean_packages_endpoint():
 
 @moderator_bp.route("/asset/<path:filename>", methods=["GET"])  # serve images from ASSET_DIRECTORY
 def serve_asset(filename: str):
-    # Prevent directory traversal and enforce naming/extension
-    if not SAFE_IMAGE_RE.match(filename):
+    # Extract just the filename from the path for validation
+    base_filename = Path(filename).name
+    
+    # Prevent directory traversal and enforce naming/extension on the actual filename
+    if not SAFE_IMAGE_RE.match(base_filename):
         abort(400, description="Invalid filename")
+    
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
     full = Path(asset_dir) / filename
+    
+    # Ensure the resolved path is within asset_dir (prevent directory traversal)
+    try:
+        full.resolve().relative_to(Path(asset_dir).resolve())
+    except ValueError:
+        abort(400, description="Invalid path")
+    
     if not full.exists():
         abort(404)
+    
+    # Serve from the parent directory, with the relative path
     return send_from_directory(asset_dir, filename)
 
 
 @moderator_bp.route("/asset/<path:filename>", methods=["DELETE"])  # delete an image
 def delete_asset(filename: str):
-    # Validate filename strictly
-    if not SAFE_IMAGE_RE.match(filename):
+    """Delete an image asset and optionally queue rename task for variant 1->0."""
+    print(f"[DELETE_ASSET] Starting deletion for: {filename}")
+    
+    # Extract just the filename from the path for validation (handle subdirectories)
+    base_filename = Path(filename).name
+    print(f"[DELETE_ASSET] Base filename: {base_filename}")
+    
+    # Validate the actual filename strictly
+    if not SAFE_IMAGE_RE.match(base_filename):
+        print(f"[DELETE_ASSET] Invalid filename pattern: {base_filename}")
         return jsonify({"ok": False, "error": "invalid filename"}), 400
 
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
+    print(f"[DELETE_ASSET] Asset directory: {asset_dir}")
+    
     target = (Path(asset_dir) / filename).resolve()
     assets_root = Path(asset_dir).resolve()
+    print(f"[DELETE_ASSET] Target path: {target}")
+    print(f"[DELETE_ASSET] Assets root: {assets_root}")
+    
     try:
         # Ensure target is within assets_root
         target.relative_to(assets_root)
-    except Exception:
+        print(f"[DELETE_ASSET] Path validation passed")
+    except Exception as e:
+        print(f"[DELETE_ASSET] Path validation failed: {e}")
         return jsonify({"ok": False, "error": "unsafe path"}), 400
 
     if not target.exists():
+        print(f"[DELETE_ASSET] File does not exist: {target}")
         return jsonify({"ok": False, "missing": True}), 404
 
     try:
         # Check if this is a variant 0 image before deletion
         # Pattern: image_{uuid}_{def_id}_0.{ext}
-        variant_0_match = re.match(r"^image_([0-9a-fA-F\-]+)_(\d+)_0\.(?:png|jpg|heic)$", filename)
+        variant_0_match = re.match(r"^image_([0-9a-fA-F\-]+)_(\d+)_0\.(?:png|jpg|heic)$", base_filename)
+        
+        if variant_0_match:
+            print(f"[DELETE_ASSET] Detected variant 0 image: uuid={variant_0_match.group(1)}, def_id={variant_0_match.group(2)}")
+        else:
+            print(f"[DELETE_ASSET] Not a variant 0 image (or different pattern)")
         
         # Remove from Redis cache FIRST (assume cache is correct)
         redis = get_redis_client()
         if redis:
             try:
                 removed_from_cache = redis.srem(REDIS_IMAGES_KEY, filename)
-                if DEBUG_TIMING:
-                    print(f"[TIMING] delete_asset: removed '{filename}' from Redis cache (existed={removed_from_cache})")
+                print(f"[DELETE_ASSET] Removed from Redis cache: {removed_from_cache > 0}")
             except Exception as e:
-                if DEBUG_TIMING:
-                    print(f"[TIMING] delete_asset: Redis error: {e}")
+                print(f"[DELETE_ASSET] Redis error during cache removal: {e}")
+        else:
+            print(f"[DELETE_ASSET] Redis not available, skipping cache removal")
         
         # Then delete the file
+        print(f"[DELETE_ASSET] Deleting file: {target}")
         target.unlink()
-        
-        if DEBUG_TIMING:
-            print(f"[TIMING] delete_asset: deleted file '{filename}'")
+        print(f"[DELETE_ASSET] File deleted successfully")
         
         # If variant 0 was deleted, queue task to rename variant 1 to variant 0 after 30 seconds
         if variant_0_match:
             uuid = variant_0_match.group(1)
             def_id = int(variant_0_match.group(2))
+            
+            print(f"[DELETE_ASSET] Queueing rename task for uuid={uuid}, def_id={def_id}")
             
             try:
                 from scripts.celery_tasks import rename_image_variant
@@ -493,17 +555,20 @@ def delete_asset(filename: str):
                     args=(asset_dir, uuid, def_id),
                     countdown=30
                 )
-                if DEBUG_TIMING:
-                    print(f"[TIMING] delete_asset: queued rename task {task.id} for {uuid}_{def_id} (30s delay)")
+                print(f"[DELETE_ASSET] Rename task queued successfully: task_id={task.id}, countdown=30s")
+                print(f"[DELETE_ASSET] Task args: asset_dir={asset_dir}, uuid={uuid}, def_id={def_id}")
             except Exception as e:
                 # Fail silently - don't block the delete operation
-                if DEBUG_TIMING:
-                    print(f"[TIMING] delete_asset: failed to queue rename task: {e}")
+                print(f"[DELETE_ASSET] ERROR: Failed to queue rename task: {e}")
+                import traceback
+                print(f"[DELETE_ASSET] Traceback: {traceback.format_exc()}")
         
+        print(f"[DELETE_ASSET] Deletion completed successfully")
         return jsonify({"ok": True})
     except Exception as e:
-        if DEBUG_TIMING:
-            print(f"[TIMING] delete_asset: error deleting '{filename}': {e}")
+        print(f"[DELETE_ASSET] ERROR during deletion: {e}")
+        import traceback
+        print(f"[DELETE_ASSET] Traceback: {traceback.format_exc()}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 

@@ -1239,10 +1239,32 @@ def delete_conceptual_images(
             if broker_url and broker_url.startswith("redis://"):
                 redis_client = redis_module.from_url(broker_url, decode_responses=True)
             else:
+                # Handle cases where port might be a URL or invalid value
+                redis_host = os.getenv("REDIS_HOST", "localhost")
+                redis_port = os.getenv("REDIS_PORT", "6379")
+                redis_db = os.getenv("REDIS_DB", "0")
+                
+                # Extract port number if it's a URL (e.g., tcp://host:port)
+                if "://" in str(redis_port):
+                    import re
+                    port_match = re.search(r':(\d+)$', redis_port)
+                    if port_match:
+                        redis_port = port_match.group(1)
+                    else:
+                        redis_port = "6379"  # Default fallback
+                
+                try:
+                    port_int = int(redis_port)
+                    db_int = int(redis_db)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid Redis port/db: port={redis_port}, db={redis_db}, using defaults")
+                    port_int = 6379
+                    db_int = 0
+                
                 redis_client = redis_module.Redis(
-                    host=os.getenv("REDIS_HOST", "localhost"),
-                    port=int(os.getenv("REDIS_PORT", "6379")),
-                    db=int(os.getenv("REDIS_DB", "0")),
+                    host=redis_host,
+                    port=port_int,
+                    db=db_int,
                     decode_responses=True
                 )
             redis_client.ping()
@@ -1695,17 +1717,25 @@ def rename_image_variant(self, asset_dir: str, uuid: str, def_id: int) -> Dict:
     Fails silently if variant 1 does not exist.
     
     Args:
-        asset_dir: Directory containing image assets
+        asset_dir: Base asset directory (images are in asset_dir/image/)
         uuid: Word UUID
         def_id: Definition ID
     
     Returns:
         Dict with rename results
     """
-    logger.info(f"Attempting to rename image variant 1 to 0: {uuid}_{def_id}")
+    logger.info(f"[RENAME_VARIANT] Task started for {uuid}_{def_id}")
+    logger.info(f"[RENAME_VARIANT] asset_dir: {asset_dir}")
+    
+    # Images are stored in asset_dir/image/
+    image_dir = os.path.join(asset_dir, "image")
+    logger.info(f"[RENAME_VARIANT] image_dir: {image_dir}")
+    logger.info(f"[RENAME_VARIANT] image_dir exists: {os.path.exists(image_dir)}")
+    logger.info(f"[RENAME_VARIANT] Task ID: {self.request.id}")
     
     try:
         import redis as redis_module
+        logger.debug(f"[RENAME_VARIANT] Redis module imported successfully")
         
         # Setup Redis for cache updates
         redis_client = None
@@ -1714,67 +1744,114 @@ def rename_image_variant(self, asset_dir: str, uuid: str, def_id: int) -> Dict:
             if broker_url and broker_url.startswith("redis://"):
                 redis_client = redis_module.from_url(broker_url, decode_responses=True)
             else:
+                # Handle cases where port might be a URL or invalid value
+                redis_host = os.getenv("REDIS_HOST", "localhost")
+                redis_port = os.getenv("REDIS_PORT", "6379")
+                redis_db = os.getenv("REDIS_DB", "0")
+                
+                # Extract port number if it's a URL (e.g., tcp://host:port)
+                if "://" in str(redis_port):
+                    import re
+                    port_match = re.search(r':(\d+)$', redis_port)
+                    if port_match:
+                        redis_port = port_match.group(1)
+                    else:
+                        redis_port = "6379"  # Default fallback
+                
+                try:
+                    port_int = int(redis_port)
+                    db_int = int(redis_db)
+                except (ValueError, TypeError):
+                    logger.warning(f"[RENAME_VARIANT] Invalid Redis port/db: port={redis_port}, db={redis_db}, using defaults")
+                    port_int = 6379
+                    db_int = 0
+                
                 redis_client = redis_module.Redis(
-                    host=os.getenv("REDIS_HOST", "localhost"),
-                    port=int(os.getenv("REDIS_PORT", "6379")),
-                    db=int(os.getenv("REDIS_DB", "0")),
+                    host=redis_host,
+                    port=port_int,
+                    db=db_int,
                     decode_responses=True
                 )
             redis_client.ping()
         except Exception as e:
-            logger.warning(f"Redis not available for cache updates: {e}")
+            logger.warning(f"[RENAME_VARIANT] Redis not available for cache updates: {e}")
             redis_client = None
+        
+        logger.info(f"[RENAME_VARIANT] Redis client setup: {'connected' if redis_client else 'not available'}")
+        
+        # Images are in asset_dir/image/ subdirectory
+        image_dir = Path(asset_dir) / "image"
         
         # Try all allowed extensions
         allowed_exts = [".png", ".jpg", ".heic"]
+        logger.info(f"[RENAME_VARIANT] Checking for extensions: {allowed_exts}")
         renamed = False
         
         for ext in allowed_exts:
             variant_1_name = f"image_{uuid}_{def_id}_1{ext}"
             variant_0_name = f"image_{uuid}_{def_id}_0{ext}"
             
-            variant_1_path = Path(asset_dir) / variant_1_name
-            variant_0_path = Path(asset_dir) / variant_0_name
+            variant_1_path = image_dir / variant_1_name
+            variant_0_path = image_dir / variant_0_name
+            
+            logger.debug(f"[RENAME_VARIANT] Checking for {variant_1_name}")
+            logger.debug(f"[RENAME_VARIANT] Full path: {variant_1_path}")
+            logger.debug(f"[RENAME_VARIANT] Exists: {variant_1_path.exists()}")
             
             if variant_1_path.exists():
+                logger.info(f"[RENAME_VARIANT] Found {variant_1_name}, renaming to {variant_0_name}")
+                logger.info(f"[RENAME_VARIANT] Target path exists before rename: {variant_0_path.exists()}")
+                
                 # Rename variant 1 to variant 0
                 variant_1_path.rename(variant_0_path)
-                logger.info(f"Renamed {variant_1_name} to {variant_0_name}")
+                logger.info(f"[RENAME_VARIANT] Successfully renamed {variant_1_name} to {variant_0_name}")
+                logger.info(f"[RENAME_VARIANT] Target path exists after rename: {variant_0_path.exists()}")
                 
                 # Update Redis cache
                 if redis_client:
                     try:
                         redis_client.srem("moderator:images:all", variant_1_name)
                         redis_client.sadd("moderator:images:all", variant_0_name)
-                        logger.debug(f"Updated Redis cache: removed {variant_1_name}, added {variant_0_name}")
+                        logger.info(f"[RENAME_VARIANT] Updated Redis cache: removed {variant_1_name}, added {variant_0_name}")
                     except Exception as e:
-                        logger.warning(f"Failed to update Redis cache: {e}")
+                        logger.warning(f"[RENAME_VARIANT] Failed to update Redis cache: {e}")
+                else:
+                    logger.debug(f"[RENAME_VARIANT] Skipped Redis cache update (no client)")
                 
                 renamed = True
                 break
         
         if not renamed:
-            logger.info(f"No variant 1 found for {uuid}_{def_id} (silent failure as expected)")
+            logger.info(f"[RENAME_VARIANT] No variant 1 found for {uuid}_{def_id} in any extension (silent failure as expected)")
+            logger.debug(f"[RENAME_VARIANT] Checked paths: {[image_dir / f'image_{uuid}_{def_id}_1{ext}' for ext in allowed_exts]}")
             return {
                 "status": "skipped",
-                "message": "Variant 1 does not exist"
+                "message": "Variant 1 does not exist",
+                "uuid": uuid,
+                "def_id": def_id,
+                "asset_dir": asset_dir
             }
         
+        logger.info(f"[RENAME_VARIANT] Task completed successfully")
         return {
             "status": "success",
             "renamed_from": variant_1_name,
-            "renamed_to": variant_0_name
+            "renamed_to": variant_0_name,
+            "uuid": uuid,
+            "def_id": def_id
         }
         
     except Exception as e:
-        logger.error(f"Error renaming image variant: {e}")
+        logger.error(f"[RENAME_VARIANT] ERROR in rename_image_variant: {e}")
         import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"[RENAME_VARIANT] Traceback: {traceback.format_exc()}")
         # Fail silently - return success status to avoid alerting
         return {
             "status": "error",
             "error": str(e),
-            "silent_failure": True
+            "silent_failure": True,
+            "uuid": uuid,
+            "def_id": def_id
         }
 
 
