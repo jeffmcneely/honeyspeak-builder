@@ -1375,16 +1375,15 @@ def package_all_assets(
 ) -> Dict:
     """
     Package all assets by launching 16 parallel tasks for letter groups [a-f, 0-9].
-    Waits for all tasks to complete, tracks timing, and saves aggregate results.
+    Returns task IDs immediately - caller must poll for completion.
     Does NOT use external_assets table - that table is deprecated.
     
     Returns:
-        Dict with task IDs for each letter group and aggregate results
+        Dict with task IDs for each letter group
     """
     import glob
     import json
     import time
-    from celery.result import AsyncResult
     
     start_time = time.time()
     logger.info("Starting parallel asset packaging for all letter groups")
@@ -1412,88 +1411,14 @@ def package_all_assets(
         tasks[letter] = task.id
         logger.info(f"Launched task for letter '{letter}': {task.id}")
     
-    logger.info(f"All {len(letter_groups)} packaging tasks launched, waiting for completion...")
-    
-    # Wait for all tasks to complete and collect results
-    aggregate_results = {
-        "total_files": 0,
-        "audio_encoded": 0,
-        "audio_failed": 0,
-        "images_encoded": 0,
-        "images_failed": 0,
-        "files_packaged": 0,
-        "files_skipped": 0,
-        "tasks_completed": 0,
-        "tasks_failed": 0
-    }
-    
-    task_results = {}
-    
-    for letter, task_id in tasks.items():
-        try:
-            result = AsyncResult(task_id, app=app)
-            # Wait for task to complete (timeout after 1 hour)
-            task_result = result.get(timeout=3600)
-            
-            if task_result.get("status") == "success":
-                aggregate_results["tasks_completed"] += 1
-                aggregate_results["total_files"] += task_result.get("total_files", 0)
-                aggregate_results["audio_encoded"] += task_result.get("audio_encoded", 0)
-                aggregate_results["audio_failed"] += task_result.get("audio_failed", 0)
-                aggregate_results["images_encoded"] += task_result.get("images_encoded", 0)
-                aggregate_results["images_failed"] += task_result.get("images_failed", 0)
-                aggregate_results["files_packaged"] += task_result.get("files_packaged", 0)
-                aggregate_results["files_skipped"] += task_result.get("files_skipped", 0)
-            else:
-                aggregate_results["tasks_failed"] += 1
-            
-            task_results[letter] = {
-                "task_id": task_id,
-                "status": task_result.get("status", "unknown"),
-                "result": task_result
-            }
-            
-            logger.info(f"Task for letter '{letter}' completed: {task_result.get('status')}")
-        except Exception as e:
-            aggregate_results["tasks_failed"] += 1
-            task_results[letter] = {
-                "task_id": task_id,
-                "status": "error",
-                "error": str(e)
-            }
-            logger.error(f"Task for letter '{letter}' failed: {e}")
-    
-    end_time = time.time()
-    total_time = end_time - start_time
-    
-    logger.info(f"All packaging tasks completed in {total_time:.2f} seconds")
-    logger.info(f"Aggregate results: {aggregate_results}")
-    
-    # Save aggregate results to package_result.json
-    try:
-        result_file = os.path.join(asset_dir, "package_result.json")
-        final_result = {
-            "status": "success",
-            "start_time": start_time,
-            "end_time": end_time,
-            "total_time_seconds": total_time,
-            "letter_groups": letter_groups,
-            "aggregate_results": aggregate_results,
-            "task_results": task_results
-        }
-        with open(result_file, 'w') as f:
-            json.dump(final_result, f, indent=2)
-        logger.info(f"Saved aggregate results to {result_file}")
-    except Exception as e:
-        logger.error(f"Failed to save aggregate results to JSON: {e}")
+    logger.info(f"All {len(letter_groups)} packaging tasks launched")
     
     return {
-        "status": "success",
-        "message": f"Completed {len(letter_groups)} packaging tasks in {total_time:.2f}s",
-        "total_time_seconds": total_time,
+        "status": "started",
+        "message": f"Launched {len(letter_groups)} packaging tasks",
+        "start_time": start_time,
         "letter_groups": letter_groups,
-        "tasks": tasks,
-        "aggregate_results": aggregate_results
+        "tasks": tasks
     }
 
 
