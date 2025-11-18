@@ -152,5 +152,4 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 - New long-running operations: add as Celery task in `scripts/celery_tasks.py` with `LoggingTask` base class; invoke via `.delay()` in Flask API.
 - New Flask routes: add to `scripts/app.py` or create a blueprint like `moderator.py`.
 - **DO NOT add new `external_assets` write operations.** The table is deprecated for writes.
-
-If anything here seems off or incomplete, tell me and I'll refine this doc.
+- When editing a HTML page add ID attributes to most elements for easier automated testing.
