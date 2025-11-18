@@ -321,21 +321,37 @@
       }
       
       async function refreshCache() {
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
         try {
+          btn.disabled = true;
+          btn.innerHTML = '⏳ Refreshing...';
           const resp = await fetch('/moderator/api/refresh-cache', { method: 'POST' });
           const data = await resp.json();
           if (data.ok) {
-            alert(`Cache refreshed! ${data.images_cached} images found.`);
+            btn.innerHTML = '✅ Done!';
+            setTimeout(() => {
+              btn.innerHTML = originalHtml;
+              btn.disabled = false;
+            }, 2000);
             // Reload current view if a letter is selected
             if (currentLetter) {
               loadDefinitions(currentLetter);
             }
           } else {
-            alert('Failed to refresh cache: ' + (data.error || 'Unknown error'));
+            btn.innerHTML = '❌ Failed';
+            setTimeout(() => {
+              btn.innerHTML = originalHtml;
+              btn.disabled = false;
+            }, 2000);
           }
         } catch (e) {
           console.error('Error refreshing cache:', e);
-          alert('Error refreshing cache');
+          btn.innerHTML = '❌ Error';
+          setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+          }, 2000);
         }
       }
       
