@@ -155,7 +155,12 @@
               </a>
             {% endif %}
             <span class="badge bg-secondary ms-2">{{ asset.assetgroup }}</span>
+            {% if asset.definition_id is defined and asset.variant is defined %}
+            <span class="badge bg-info">def: {{ asset.definition_id }}</span>
+            <span class="badge bg-warning">var: {{ asset.variant }}</span>
+            {% else %}
             <span class="badge bg-info">sid: {{ asset.sid }}</span>
+            {% endif %}
           </li>
           {% endfor %}
         </ul>
