@@ -1992,16 +1992,23 @@ def api_approve_story():
                 difficulty=level  # Also store as difficulty
             )
             
-            # Add story as a single paragraph
-            db.add_story_paragraph(
-                story_uuid=story_uuid,
-                paragraph_index=0,
-                paragraph_title="",
-                content=story_text
-            )
+            # Split story into paragraphs on line breaks
+            paragraphs = [p.strip() for p in story_text.split('\n') if p.strip()]
             
-            # Add word associations (all words in paragraph 0)
-            story_words = [(story_uuid, word_uuid, 0) for word_uuid in word_uuids]
+            # Add each paragraph
+            for idx, paragraph_text in enumerate(paragraphs):
+                db.add_story_paragraph(
+                    story_uuid=story_uuid,
+                    paragraph_index=idx,
+                    paragraph_title="",
+                    content=paragraph_text
+                )
+            
+            # Add word associations (distribute across all paragraphs)
+            # For simplicity, associate all words with all paragraphs
+            story_words = []
+            for paragraph_idx in range(len(paragraphs)):
+                story_words.extend([(story_uuid, word_uuid, paragraph_idx) for word_uuid in word_uuids])
             words_added = db.batch_add_story_words(story_words)
             
             return jsonify({
