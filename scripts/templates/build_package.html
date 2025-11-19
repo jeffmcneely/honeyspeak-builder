@@ -196,28 +196,35 @@ function loadDownloadFiles() {
             $('#download-all-packages').click(function(e) {
                 e.preventDefault();
                 
-                // Download database files first
+                // Combine all files to download
+                var allFiles = [];
                 if (data.db_files && data.db_files.length > 0) {
-                    data.db_files.forEach(function(file) {
-                        var link = document.createElement('a');
-                        link.href = '/download_file/' + file;
-                        link.download = file;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    });
+                    allFiles = allFiles.concat(data.db_files);
                 }
+                allFiles = allFiles.concat(data.package_files);
                 
-                // Then download package files
-                data.package_files.forEach(function(file) {
-                    // Create temporary link and trigger download
+                // Download files sequentially with delay to avoid browser blocking
+                var currentIndex = 0;
+                function downloadNext() {
+                    if (currentIndex >= allFiles.length) {
+                        return;
+                    }
+                    
+                    var file = allFiles[currentIndex];
                     var link = document.createElement('a');
                     link.href = '/download_file/' + file;
                     link.download = file;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                });
+                    
+                    currentIndex++;
+                    if (currentIndex < allFiles.length) {
+                        setTimeout(downloadNext, 500); // 500ms delay between downloads
+                    }
+                }
+                
+                downloadNext();
             });
         } else {
             $('#package-files-container').html('<p class="text-muted">No package files available</p>');
