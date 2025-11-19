@@ -73,6 +73,9 @@ SQLITE_SCHEMA = [
         version    INTEGER DEFAULT 1,
         created_at TEXT    DEFAULT CURRENT_TIMESTAMP
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_test_name ON test(name)""",
+    """CREATE INDEX IF NOT EXISTS idx_test_version ON test(version)""",
+    """CREATE INDEX IF NOT EXISTS idx_test_name_version ON test(name, version)""",
     """CREATE TABLE question (
         id        INTEGER PRIMARY KEY,
         test_id   INTEGER NOT NULL REFERENCES test(id) ON DELETE CASCADE,
@@ -82,6 +85,9 @@ SQLITE_SCHEMA = [
         flags     INTEGER DEFAULT 0,
         UNIQUE(test_id, prompt)
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_question_test_id ON question(test_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_question_level ON question(level)""",
+    """CREATE INDEX IF NOT EXISTS idx_question_test_id_level ON question(test_id, level)""",
     """CREATE TABLE answer (
         id          INTEGER PRIMARY KEY,
         question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
@@ -89,10 +95,11 @@ SQLITE_SCHEMA = [
         is_correct  INTEGER NOT NULL CHECK (is_correct IN (0,1)),
         weight      REAL    DEFAULT 1.0,        -- for sampling if needed
         UNIQUE(question_id, body_uuid)
-    """,
-    """CREATE INDEX idx_answer_qid           ON answer(question_id)""",
-    """CREATE INDEX idx_answer_qid_correct   ON answer(question_id) WHERE is_correct = 1""",
-    """CREATE INDEX idx_answer_qid_incorrect ON answer(question_id) WHERE is_correct = 0""",
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_answer_question_id ON answer(question_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_answer_body_uuid ON answer(body_uuid)""",
+    """CREATE INDEX IF NOT EXISTS idx_answer_question_id_correct ON answer(question_id) WHERE is_correct = 1""",
+    """CREATE INDEX IF NOT EXISTS idx_answer_question_id_incorrect ON answer(question_id) WHERE is_correct = 0""",
 ]
 
 
