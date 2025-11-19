@@ -243,16 +243,18 @@ def list_images_for(uuid: str, sid: int, asset_dir: str = None) -> List[str]:
     return sorted(files)
 
 
-def collect_rows_with_images(asset_dir: str, starting_letter: str = None, function_label: str = None) -> List[Dict]:
+def collect_rows_with_images(asset_dir: str, starting_letter: str = None, level: str = None, function_label: str = None) -> List[Dict]:
     """Collect definitions that have images from the database and Redis cache (or filesystem fallback).
     
     Args:
         asset_dir: Directory containing image assets (used for cache warming and filesystem fallback)
         starting_letter: Filter words by starting letter (case-insensitive). Use '-' for non-alphabetic.
+        level: Filter by CEFR level (e.g., 'a1', 'a2', 'b1', 'b2', 'c1', 'c2')
+        function_label: Filter by function label (e.g., noun, verb, adjective, adverb)
     """
     overall_start = time.time() if DEBUG_TIMING else None
     
-    print(f"[MODERATOR DEBUG] collect_rows_with_images: asset_dir={asset_dir}, starting_letter={starting_letter}, function_label={function_label}")
+    print(f"[MODERATOR DEBUG] collect_rows_with_images: asset_dir={asset_dir}, starting_letter={starting_letter}, level={level}, function_label={function_label}")
     
     # Try to ensure Redis cache is populated (if Redis is available)
     redis = get_redis_client()
@@ -292,9 +294,9 @@ def collect_rows_with_images(asset_dir: str, starting_letter: str = None, functi
     db = Dictionary()
     rows: List[Dict] = []
     try:
-        # Pass function_label to DB query if provided
+        # Pass function_label and level to DB query if provided
         query_start = time.time() if DEBUG_TIMING else None
-        results = db.get_all_definitions_with_words(starting_letter=starting_letter, function_label=function_label)
+        results = db.get_all_definitions_with_words(starting_letter=starting_letter, level=level, function_label=function_label)
         query_time = time.time() - query_start if DEBUG_TIMING else 0
         print(f"[MODERATOR DEBUG] SQL query returned {len(results)} definitions")
         if results and len(results) > 0:
@@ -360,16 +362,18 @@ def get_definitions():
     """API endpoint to get definitions with images via AJAX.
     Query params:
         letter: Filter by starting letter (a-z or '-' for non-alphabetic)
+        level: Filter by CEFR level (a1, a2, b1, b2, c1, c2)
         function_label: Filter by function label (noun, verb, adverb, adjective)
     """
     from flask import request
     request_start = time.time() if DEBUG_TIMING else None
     asset_dir = current_app.config.get("ASSET_DIRECTORY") or os.getenv("ASSET_DIRECTORY", "assets_hires")
     starting_letter = request.args.get("letter", None)
+    level = request.args.get("level", None)
     function_label = request.args.get("function_label", None)
     if DEBUG_TIMING:
-        print(f"\n[TIMING] ========== API REQUEST: /api/definitions?letter={starting_letter}&function_label={function_label} ==========")
-    rows = collect_rows_with_images(asset_dir, starting_letter, function_label)
+        print(f"\n[TIMING] ========== API REQUEST: /api/definitions?letter={starting_letter}&level={level}&function_label={function_label} ==========")
+    rows = collect_rows_with_images(asset_dir, starting_letter, level, function_label)
     if DEBUG_TIMING:
         total_time = time.time() - request_start
         print(f"[TIMING] Total API response time: {total_time:.4f}s for {len(rows)} definitions")

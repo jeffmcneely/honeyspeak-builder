@@ -378,7 +378,7 @@ class PostgresDictionary:
             result.append((word, definitions))
         return result
     
-    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, function_label: Optional[str] = None) -> List[dict]:
+    def get_all_definitions_with_words(self, limit: Optional[int] = None, starting_letter: Optional[str] = None, level: Optional[str] = None, function_label: Optional[str] = None) -> List[dict]:
         """
         Get all definitions with their word data in a single optimized query.
         
@@ -388,14 +388,15 @@ class PostgresDictionary:
         Args:
             limit: Maximum number of rows to return
             starting_letter: Filter by starting letter (a-z) or '-' for non-alphabetic
+            level: Filter by CEFR level (e.g., 'a1', 'a2', 'b1', 'b2', 'c1', 'c2')
             function_label: Filter by function label (e.g., noun, verb, adjective, adverb)
         
         Returns:
-            List of dicts with keys: uuid, word, functional_label, flags, def_id, definition
+            List of dicts with keys: uuid, word, functional_label, flags, level, def_id, definition
         """
         query = """
             SELECT 
-                w.uuid, w.word, w.functional_label, w.flags,
+                w.uuid, w.word, w.functional_label, w.flags, w.level,
                 s.id as def_id, s.definition
             FROM words w
             INNER JOIN shortdef s ON w.uuid = s.uuid
@@ -408,6 +409,9 @@ class PostgresDictionary:
             else:
                 conditions.append("LOWER(SUBSTRING(w.word, 1, 1)) = %s")
                 params.append(starting_letter.lower())
+        if level:
+            conditions.append("w.level = %s")
+            params.append(level.lower())
         if function_label:
             conditions.append("w.functional_label = %s")
             params.append(function_label)

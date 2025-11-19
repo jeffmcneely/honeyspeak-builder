@@ -193,6 +193,15 @@
           <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('adjective', event)">Adjective</button>
           <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('adverb', event)">Adverb</button>
         </div>
+        <span class="ms-4"><strong>CEFR level:</strong></span>
+        <div id="level-buttons" class="ms-2 btn-group" role="group">
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('a1', event)">A1</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('a2', event)">A2</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('b1', event)">B1</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('b2', event)">B2</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('c1', event)">C1</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="filterByLevel('c2', event)">C2</button>
+        </div>
       </div>
       <div id="letter-buttons">
         <button class="btn btn-sm btn-outline-primary" onclick="filterByLetter('a')">A</button>
@@ -243,9 +252,10 @@
     <script>
   let currentLetter = null;
   let currentFunctionLabel = null;
+  let currentLevel = null;
       
       // Fetch and display definitions via AJAX
-      async function loadDefinitions(letter = null, functionLabel = null) {
+      async function loadDefinitions(letter = null, level = null, functionLabel = null) {
         try {
           document.getElementById('loading').style.display = 'block';
           document.getElementById('no-filter-message').style.display = 'none';
@@ -253,6 +263,7 @@
           let url = '/moderator/api/definitions';
           const params = [];
           if (letter) params.push(`letter=${encodeURIComponent(letter)}`);
+          if (level) params.push(`level=${encodeURIComponent(level)}`);
           if (functionLabel) params.push(`function_label=${encodeURIComponent(functionLabel)}`);
           if (params.length > 0) url += '?' + params.join('&');
           const response = await fetch(url);
@@ -285,7 +296,7 @@
         });
         event.target.classList.remove('btn-outline-primary');
         event.target.classList.add('active', 'btn-primary');
-        loadDefinitions(currentLetter, currentFunctionLabel);
+        loadDefinitions(currentLetter, currentLevel, currentFunctionLabel);
       }
 
       function filterByFunctionLabel(label, event) {
@@ -299,12 +310,27 @@
           event.target.classList.remove('btn-outline-success');
           event.target.classList.add('active', 'btn-success');
         }
-        loadDefinitions(currentLetter, currentFunctionLabel);
+        loadDefinitions(currentLetter, currentLevel, currentFunctionLabel);
+      }
+      
+      function filterByLevel(level, event) {
+        currentLevel = level;
+        // Update button states
+        document.querySelectorAll('#level-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-warning');
+          btn.classList.add('btn-outline-warning');
+        });
+        if (event && event.target) {
+          event.target.classList.remove('btn-outline-warning');
+          event.target.classList.add('active', 'btn-warning');
+        }
+        loadDefinitions(currentLetter, currentLevel, currentFunctionLabel);
       }
       
       function clearFilter() {
         currentLetter = null;
         currentFunctionLabel = null;
+        currentLevel = null;
         // Update button states
         document.querySelectorAll('#letter-buttons .btn').forEach(btn => {
           btn.classList.remove('active', 'btn-primary');
@@ -313,6 +339,10 @@
         document.querySelectorAll('#function-label-buttons .btn').forEach(btn => {
           btn.classList.remove('active', 'btn-success');
           btn.classList.add('btn-outline-success');
+        });
+        document.querySelectorAll('#level-buttons .btn').forEach(btn => {
+          btn.classList.remove('active', 'btn-warning');
+          btn.classList.add('btn-outline-warning');
         });
         // Show no filter message
         document.getElementById('loading').style.display = 'none';
@@ -336,7 +366,7 @@
             }, 2000);
             // Reload current view if a letter is selected
             if (currentLetter) {
-              loadDefinitions(currentLetter);
+              loadDefinitions(currentLetter, currentLevel, currentFunctionLabel);
             }
           } else {
             btn.innerHTML = '❌ Failed';
