@@ -325,8 +325,8 @@ def store_asset_metadata(
             from libs.sqlite_dictionary import SQLiteDictionary
             db = SQLiteDictionary(db_path)
         else:
-            from libs.dictionary import Dictionary
-            db = Dictionary(db_path)
+            from libs.pg_dictionary import PostgresDictionary
+            db = PostgresDictionary(db_path)
         db.add_asset(uuid, assetgroup, sid, package_id, filename)
         db.close()
         logger.info(f"Stored asset metadata: {uuid}/{assetgroup}/{sid} -> {package_id}/{filename}")
@@ -356,8 +356,8 @@ def store_asset_metadata_batch(
             from libs.sqlite_dictionary import SQLiteDictionary
             db = SQLiteDictionary(db_path)
         else:
-            from libs.dictionary import Dictionary
-            db = Dictionary(db_path)
+            from libs.pg_dictionary import PostgresDictionary
+            db = PostgresDictionary(db_path)
         
         # Begin transaction
         db.begin_immediate()
@@ -433,8 +433,8 @@ def delete_all_assets(db_path: str) -> Dict[str, str]:
             from libs.sqlite_dictionary import SQLiteDictionary
             db = SQLiteDictionary(db_path)
         else:
-            from libs.dictionary import Dictionary
-            db = Dictionary(db_path)
+            from libs.pg_dictionary import PostgresDictionary
+            db = PostgresDictionary(db_path)
         db.delete_assets()
         db.close()
         logger.info("Deleted all asset metadata from database")

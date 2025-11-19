@@ -107,8 +107,8 @@ def process_api_entry(entry: dict, function_label: str, level: str, db_path: str
         Tuple of (success: bool, message: str)
     """
     try:
-        from libs.dictionary import Dictionary
-        db = Dictionary(db_path)
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary(db_path)
         
         meta = entry["meta"]
         word = meta.get("id").split(":")[0]
@@ -254,8 +254,8 @@ def get_word_count(db_path: str) -> int:
     Returns:
         Total word count
     """
-    from libs.dictionary import Dictionary
-    db = Dictionary(db_path)
+    from libs.pg_dictionary import PostgresDictionary
+    db = PostgresDictionary(db_path)
     count = db.get_word_count()
     db.close()
     return count

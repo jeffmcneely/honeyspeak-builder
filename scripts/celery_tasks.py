@@ -40,6 +40,7 @@ from libs.package_ops import (
     delete_all_assets
 )
 from libs.dictionary import Dictionary
+from libs.pg_dictionary import PostgresDictionary
 
 # Setup logging directory
 STORAGE_DIRECTORY = os.getenv("STORAGE_DIRECTORY", str(Path(__file__).parent.parent))
@@ -243,7 +244,7 @@ def mark_all_words_unknown(
     logger.info("Marking all words as level='z1'")
     
     try:
-        db = Dictionary(db_path)
+        db = PostgresDictionary(db_path)
         
         # Get count before update
         word_count = db.get_word_count()
@@ -319,7 +320,7 @@ def update_word_levels_from_list(
                 return abbr
     
     try:
-        db = Dictionary(db_path)
+        db = PostgresDictionary(db_path)
         
         updated_count = 0
         not_found_count = 0
@@ -571,7 +572,7 @@ def generate_assets_for_word(
     
     
     # Get definitions
-    db = Dictionary(db_path)
+    db = PostgresDictionary(db_path)
     definitions = db.get_shortdefs(uuid)
     db.close()
     
@@ -626,7 +627,7 @@ def generate_all_assets(
     logger.info("Starting asset generation for all words")
     logger.info(f"Generate audio: {generate_audio}, Generate images: {generate_images}")
     
-    db = Dictionary(db_path)
+    db = PostgresDictionary(db_path)
     words = db.get_all_words()
     db.close()
     
@@ -665,13 +666,13 @@ def generate_all_assets(
         logger.info(f"Progress: {i+1}/{len(words)} - {word.word}")
         
         # Get UUIDs for this word
-        db = Dictionary(db_path)
+        db = PostgresDictionary(db_path)
         uuids = db.get_uuids(word.word)
         db.close()
         
         for uuid in uuids:
             # Get definitions to check which assets would be generated
-            db = Dictionary(db_path)
+            db = PostgresDictionary(db_path)
             definitions = db.get_shortdefs(uuid)
             db.close()
             
@@ -1285,7 +1286,7 @@ def delete_conceptual_images(
             logger.warning(f"Redis not available for cache invalidation: {e}")
             redis_client = None
         
-        db = Dictionary(db_path)
+        db = PostgresDictionary(db_path)
         
         # Get all definitions with words, filtering for non-noun/verb
         all_definitions = db.get_all_definitions_with_words()
