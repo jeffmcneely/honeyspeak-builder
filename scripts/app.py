@@ -722,17 +722,42 @@ def build_package_db_only():
 @app.route("/api/package_results")
 def get_package_results():
     """Get the overall package results from package_result.json"""
-    import json
-    result_file = Path(ASSET_DIR) / "package_result.json"
-    if not result_file.exists():
-        return jsonify({"status": "not_found", "message": "No package results found"})
-    
-    try:
-        with open(result_file, 'r') as f:
-            data = json.load(f)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+    # New logic: check for 3 database files and 16 package_*.zip files in PACKAGE_DIR
+    pkg_dir = Path(PACKAGE_DIR)
+    expected_db_files = ["worddb.sqlite", "storydb.sqlite", "testdb.sqlite"]
+    db_files = []
+    package_files = []
+    results = []
+    success_count = 0
+    total_expected = 19
+    # Check DB files
+    for db in expected_db_files:
+        db_path = pkg_dir / db
+        size = db_path.stat().st_size if db_path.exists() else 0
+        status = "success" if size > 0 else "failed"
+        if status == "success":
+            success_count += 1
+        results.append({"name": db, "status": status, "size": size})
+    # Check package_*.zip files
+    for i in range(16):
+        zip_name = f"package_{i:02x}.zip" if i < 10 else f"package_{chr(87+i)}0.zip" if i >= 10 else f"package_{i}.zip"
+        # Use hex for 0-9, a-f for 10-15
+        if i < 10:
+            zip_name = f"package_{i}.zip"
+        else:
+            zip_name = f"package_{chr(87+i)}.zip"  # a=10, b=11, ... f=15
+        zip_path = pkg_dir / zip_name
+        size = zip_path.stat().st_size if zip_path.exists() else 0
+        status = "success" if size > 0 else "failed"
+        if status == "success":
+            success_count += 1
+        results.append({"name": zip_name, "status": status, "size": size})
+    summary = f"{success_count} out of {total_expected} succeeded"
+    return jsonify({
+        "status": "success",
+        "summary": summary,
+        "results": results
+    })
 
 @app.route("/api/package_results/<letter>")
 def get_package_letter_results(letter):
@@ -1677,8 +1702,8 @@ def api_choose_words():
         level = data.get("level", "a1")
         num_words = data.get("num_words", 4)
         
-        from libs.dictionary import Dictionary
-        db = Dictionary()
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary()
         
         try:
             # Fetch random nouns
@@ -1729,8 +1754,8 @@ def api_replace_word():
         functional_label = data.get("functional_label", "noun")
         exclude_uuids = data.get("exclude_uuids", [])
         
-        from libs.dictionary import Dictionary
-        db = Dictionary()
+        from libs.pg_dictionary import PostgresDictionary
+        db = PostgresDictionary()
         
         try:
             # Build query with exclusions

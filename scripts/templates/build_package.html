@@ -275,45 +275,21 @@ function loadPackageResults() {
         if (data.status === 'not_found') {
             return; // Keep default message
         }
-        
         if (data.status === 'error') {
             $('#package-results-container').html(
                 '<div class="alert alert-danger">Error loading results: ' + data.error + '</div>'
             );
             return;
         }
-        
-        // Display aggregate results
-        var html = '<div class="alert alert-success"><strong>Packaging Complete!</strong></div>';
-        
-        html += '<div class="row">';
-        html += '<div class="col-md-6">';
-        html += '<h6>Summary</h6>';
-        html += '<table class="table table-sm">';
-        html += '<tr><th>Total Time:</th><td>' + formatTime(data.total_time_seconds) + '</td></tr>';
-        html += '<tr><th>Tasks Completed:</th><td>' + data.aggregate_results.tasks_completed + ' / ' + data.letter_groups.length + '</td></tr>';
-        if (data.aggregate_results.tasks_failed > 0) {
-            html += '<tr><th>Tasks Failed:</th><td class="text-danger">' + data.aggregate_results.tasks_failed + '</td></tr>';
-        }
-        html += '</table>';
-        html += '</div>';
-        
-        html += '<div class="col-md-6">';
-        html += '<h6>Files Processed</h6>';
-        html += '<table class="table table-sm">';
-        html += '<tr><th>Total Files:</th><td>' + data.aggregate_results.total_files + '</td></tr>';
-        html += '<tr><th>Audio Encoded:</th><td>' + data.aggregate_results.audio_encoded + '</td></tr>';
-        html += '<tr><th>Images Encoded:</th><td>' + data.aggregate_results.images_encoded + '</td></tr>';
-        html += '<tr><th>Files Packaged:</th><td>' + data.aggregate_results.files_packaged + '</td></tr>';
-        html += '<tr><th>Files Skipped:</th><td>' + data.aggregate_results.files_skipped + '</td></tr>';
-        if (data.aggregate_results.audio_failed > 0 || data.aggregate_results.images_failed > 0) {
-            html += '<tr><th>Failed:</th><td class="text-danger">Audio: ' + data.aggregate_results.audio_failed + 
-                    ', Images: ' + data.aggregate_results.images_failed + '</td></tr>';
-        }
-        html += '</table>';
-        html += '</div>';
-        html += '</div>';
-        
+        // Display new summary out of 19
+        var html = '<div class="alert alert-success"><strong>Packaging Results</strong></div>';
+        html += '<h6>' + data.summary + '</h6>';
+        html += '<table class="table table-sm"><thead><tr><th>File</th><th>Status</th><th>Size</th></tr></thead><tbody>';
+        data.results.forEach(function(r) {
+            var status = r.status === 'success' ? '<span class="text-success">Success</span>' : '<span class="text-danger">Failed</span>';
+            html += '<tr><td>' + r.name + '</td><td>' + status + '</td><td>' + (r.size > 0 ? filesizeformat(r.size) : '-') + '</td></tr>';
+        });
+        html += '</tbody></table>';
         $('#package-results-container').html(html);
         $('#individual-results-section').show();
     }).fail(function() {
