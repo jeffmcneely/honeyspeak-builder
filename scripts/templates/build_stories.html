@@ -122,6 +122,8 @@
             
             <textarea id="story_output" class="form-control" rows="12" style="font-family: monospace;"></textarea>
             
+            <div id="approval_status" class="mt-2" style="display: none; font-family: monospace; font-size: 14px;"></div>
+            
             <button id="approve_btn" class="btn btn-primary mt-3" style="display: none;">
                 <i class="bi bi-check-circle"></i> Approve Story
             </button>
@@ -294,6 +296,7 @@ $(document).ready(function() {
         $('#story_loading').show();
         $('#story_output').val('');
         $('#story_status').hide();
+        $('#approval_status').hide();
         $('#story_output_card').show();
         $('#approve_btn').hide();
         
@@ -333,7 +336,7 @@ $(document).ready(function() {
                                 $('#story_loading').hide();
                                 $('#story_status').text(missingMsg + ' - Max attempts reached.').css('color', '#dc3545').show();
                                 $('#story_output').val(response.story);
-                                $('#approve_btn').show();
+                                $('#approve_btn').prop('disabled', false).removeClass('btn-success').addClass('btn-primary').html('<i class="bi bi-check-circle"></i> Approve Story').show();
                             }
                         } else {
                             // Success - all words present
@@ -349,7 +352,7 @@ $(document).ready(function() {
                             currentModel = model;
                             currentLevel = level;
                             
-                            $('#approve_btn').show();
+                            $('#approve_btn').prop('disabled', false).removeClass('btn-success').addClass('btn-primary').html('<i class="bi bi-check-circle"></i> Approve Story').show();
                         }
                     } else {
                         $('#story_loading').hide();
@@ -388,21 +391,16 @@ $(document).ready(function() {
             }),
             success: function(response) {
                 if (response.success) {
-                    $('#story_status').text('✓ ' + response.message).css('color', '#28a745').show();
+                    $('#approval_status').html(`✓ Story saved successfully!<br>Story UUID: <strong>${response.story_uuid}</strong><br>Word associations: <strong>${response.words_added}</strong>`).css('color', '#28a745').show();
                     $('#approve_btn').html('<i class="bi bi-check-circle"></i> Saved!').removeClass('btn-primary').addClass('btn-success');
-                    
-                    // Show success message
-                    setTimeout(function() {
-                        alert(`Story saved successfully!\nStory UUID: ${response.story_uuid}\nWord associations: ${response.words_added}`);
-                    }, 100);
                 } else {
-                    $('#story_status').text('Error: ' + (response.error || 'Unknown error')).css('color', '#dc3545').show();
+                    $('#approval_status').text('✗ Error: ' + (response.error || 'Unknown error')).css('color', '#dc3545').show();
                     $('#approve_btn').prop('disabled', false).html('<i class="bi bi-check-circle"></i> Approve Story');
                 }
             },
             error: function(xhr) {
                 const errorMsg = xhr.responseJSON?.error || 'Unknown error';
-                $('#story_status').text('Error saving story: ' + errorMsg).css('color', '#dc3545').show();
+                $('#approval_status').text('✗ Error saving story: ' + errorMsg).css('color', '#dc3545').show();
                 $('#approve_btn').prop('disabled', false).html('<i class="bi bi-check-circle"></i> Approve Story');
             }
         });

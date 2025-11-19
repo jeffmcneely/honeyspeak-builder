@@ -326,7 +326,6 @@ def init_database():
     import time
     import tempfile
     import shutil
-    from libs.sqlite_dictionary import SQLITE_SCHEMA
     from libs.pg_dictionary import POSTGRES_SCHEMA, PostgresDictionary
     
     # Check if we should use PostgreSQL
@@ -354,155 +353,7 @@ def init_database():
                 "message": str(e),
                 "backend": "PostgreSQL"
             }), 500
-    
-    # Otherwise use SQLite
-    db_path = DICT_PATH
-    conn = None
-    
-    try:
-        print(f"[init_database] Initializing SQLite: {db_path}...")
-        
-        # Check if database already exists and is valid
-        if Path(db_path).exists():
-            existing_size = Path(db_path).stat().st_size
-            if existing_size > 0:
-                return jsonify({
-                    "status": "already_exists",
-                    "message": f"Database already initialized ({existing_size} bytes)",
-                    "path": db_path
-                })
-            else:
-                # Remove 0-byte file
-                print(f"[init_database] Removing 0-byte database file...")
-                Path(db_path).unlink()
-        
-        # Ensure directory exists
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        # WORKAROUND for network filesystem locking issues:
-        # Create database in /tmp first, then move to final location
-        print(f"[init_database] Creating database in temp directory to avoid network FS locking...")
-        
-        with tempfile.NamedTemporaryFile(suffix='.sqlite', delete=False, dir='/tmp') as tmp_file:
-            temp_db_path = tmp_file.name
-        
-        print(f"[init_database] Temp database path: {temp_db_path}")
-        
-        # Create connection to temp database (local filesystem, no locking issues)
-        conn = sqlite3.connect(temp_db_path, timeout=5.0)
-        
-        try:
-            # Set pragmas (use DELETE mode for initial creation)
-            print(f"[init_database] Setting pragmas...")
-            conn.execute("PRAGMA journal_mode = DELETE")
-            conn.execute("PRAGMA synchronous = NORMAL")
-            conn.execute("PRAGMA foreign_keys = ON")
-            
-            # Create all tables in a single transaction
-            print(f"[init_database] Creating tables...")
-            conn.execute("BEGIN")
-            cursor = conn.cursor()
-            for i, stmt in enumerate(SQLITE_SCHEMA):
-                print(f"[init_database] Executing statement {i+1}/{len(SQLITE_SCHEMA)}: {stmt[:50]}...")
-                cursor.execute(stmt)
-            conn.commit()
-            
-            # Get size of temp database
-            temp_size = Path(temp_db_path).stat().st_size
-            print(f"[init_database] Temp database created successfully ({temp_size} bytes)")
-            
-            # Close connection before moving file
-            conn.close()
-            conn = None
-            
-            # Move temp database to final location
-            print(f"[init_database] Moving database to final location: {db_path}")
-            shutil.move(temp_db_path, db_path)
-            
-            # Small delay to ensure filesystem sync
-            time.sleep(0.5)
-            
-            # Now open the database and convert to WAL mode if possible
-            print(f"[init_database] Opening database to enable WAL mode...")
-            conn = sqlite3.connect(db_path, timeout=5.0)
-            
-            try:
-                # Try to convert to WAL mode (might fail on some network filesystems)
-                print(f"[init_database] Attempting to enable WAL mode...")
-                result = conn.execute("PRAGMA journal_mode = WAL").fetchone()
-                print(f"[init_database] Journal mode result: {result}")
-                
-                if result and result[0].upper() == 'WAL':
-                    conn.execute("PRAGMA wal_autocheckpoint = 1000")
-                    conn.commit()
-                    mode_message = "WAL mode enabled"
-                else:
-                    print(f"[init_database WARNING] Could not enable WAL mode, using DELETE mode")
-                    mode_message = "DELETE mode (WAL not available on this filesystem)"
-            except Exception as wal_e:
-                print(f"[init_database WARNING] WAL mode failed: {wal_e}, continuing with DELETE mode")
-                mode_message = "DELETE mode (WAL failed)"
-            
-            conn.close()
-            conn = None
-            
-            db_size = Path(db_path).stat().st_size
-            print(f"[init_database] Database initialized successfully ({db_size} bytes, {mode_message})")
-            
-            return jsonify({
-                "status": "success",
-                "message": f"Database initialized successfully ({db_size} bytes, {mode_message})",
-                "path": db_path,
-                "size": db_size
-            })
-            
-        except Exception as inner_e:
-            print(f"[init_database ERROR] Transaction failed: {inner_e}")
-            # Clean up temp file if it exists
-            if Path(temp_db_path).exists():
-                try:
-                    Path(temp_db_path).unlink()
-                except:
-                    pass
-            try:
-                if conn:
-                    conn.rollback()
-            except:
-                pass
-            raise
-        
-    except Exception as e:
-        print(f"[init_database ERROR] {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Clean up partial database file
-        try:
-            if Path(db_path).exists():
-                print(f"[init_database] Cleaning up failed database file...")
-                Path(db_path).unlink()
-                # Also remove WAL/SHM files if they exist
-                for suffix in ['-wal', '-shm']:
-                    wal_file = Path(f"{db_path}{suffix}")
-                    if wal_file.exists():
-                        wal_file.unlink()
-        except Exception as cleanup_e:
-            print(f"[init_database] Cleanup error: {cleanup_e}")
-        
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "path": db_path
-        }), 500
-        
-    finally:
-        # Always close the connection
-        if conn:
-            try:
-                print(f"[init_database] Closing connection...")
-                conn.close()
-            except Exception as close_e:
-                print(f"[init_database] Error closing connection: {close_e}")
+
 
 @app.route("/reset_database")
 def reset_database():
@@ -621,199 +472,105 @@ def build_dictionary():
     tables_exist = False
     
     try:
-        if POSTGRES_CONN:
-            from libs.pg_dictionary import PostgresDictionary
-            from libs.sqlite_dictionary import Flags
-            pg_dict = PostgresDictionary()
-            tables_exist = True  # PostgresDictionary ensures schema on init
-            if query:
-                word = pg_dict.get_word_by_text(query)
-                if word:
-                    # Build complete word data with definitions and assets
-                    word_data = {
-                        "word": word.word,
-                        "fl": word.functional_label,
-                        "uuid": word.uuid,
-                        "flags": word.flags,
-                        "level": word.level,
-                        "definitions": [],
-                        "assets": []
-                    }
+        if not POSTGRES_CONN:
+            flash("Word search is only available when using PostgreSQL backend.", "warning")
+        from libs.pg_dictionary import PostgresDictionary
+        from libs.sqlite_dictionary import Flags
+        pg_dict = PostgresDictionary()
+        tables_exist = True  # PostgresDictionary ensures schema on init
+        if query:
+            word = pg_dict.get_word_by_text(query)
+            if word:
+                # Build complete word data with definitions and assets
+                word_data = {
+                    "word": word.word,
+                    "fl": word.functional_label,
+                    "uuid": word.uuid,
+                    "flags": word.flags,
+                    "level": word.level,
+                    "definitions": [],
+                    "assets": []
+                }
+                
+                # Compute human-readable flag names
+                try:
+                    flags_obj = Flags.from_int(word.flags or 0)
+                    flags_list = []
+                    if flags_obj.offensive:
+                        flags_list.append("Offensive")
+                    if flags_obj.british:
+                        flags_list.append("British")
+                    if flags_obj.us:
+                        flags_list.append("US")
+                    if flags_obj.old_fashioned:
+                        flags_list.append("Old-fashioned")
+                    if flags_obj.informal:
+                        flags_list.append("Informal")
+                    word_data["flags_list"] = flags_list
+                except Exception:
+                    word_data["flags_list"] = []
+                
+                # Get definitions with sid
+                shortdefs = pg_dict.get_shortdefs(word.uuid)
+                for sd in shortdefs:
+                    word_data["definitions"].append({
+                        "sid": sd.id,
+                        "definition": sd.definition
+                    })
+                
+                # Check filesystem for generated assets
+                try:
+                    audio_dir = os.path.join(ASSET_DIR, "audio")
+                    image_dir = os.path.join(ASSET_DIR, "image")
                     
-                    # Compute human-readable flag names
-                    try:
-                        flags_obj = Flags.from_int(word.flags or 0)
-                        flags_list = []
-                        if flags_obj.offensive:
-                            flags_list.append("Offensive")
-                        if flags_obj.british:
-                            flags_list.append("British")
-                        if flags_obj.us:
-                            flags_list.append("US")
-                        if flags_obj.old_fashioned:
-                            flags_list.append("Old-fashioned")
-                        if flags_obj.informal:
-                            flags_list.append("Informal")
-                        word_data["flags_list"] = flags_list
-                    except Exception:
-                        word_data["flags_list"] = []
+                    # Check for word audio
+                    word_audio = f"word_{word.uuid}_0.aac"
+                    if os.path.exists(os.path.join(audio_dir, word_audio)):
+                        # Check if not already in assets from DB
+                        if not any(a["filename"] == word_audio for a in word_data["assets"]):
+                            word_data["assets"].append({
+                                "assetgroup": "word",
+                                "sid": 0,
+                                "definition_id": 0,
+                                "variant": 0,
+                                "package": None,
+                                "filename": word_audio,
+                                "source": "filesystem"
+                            })
                     
-                    # Get definitions with sid
-                    shortdefs = pg_dict.get_shortdefs(word.uuid)
+                    # Check for definition audio and images
                     for sd in shortdefs:
-                        word_data["definitions"].append({
-                            "sid": sd.id,
-                            "definition": sd.definition
-                        })
-                    
-                    # Check filesystem for generated assets
-                    try:
-                        audio_dir = os.path.join(ASSET_DIR, "audio")
-                        image_dir = os.path.join(ASSET_DIR, "image")
-                        
-                        # Check for word audio
-                        word_audio = f"word_{word.uuid}_0.aac"
-                        if os.path.exists(os.path.join(audio_dir, word_audio)):
-                            # Check if not already in assets from DB
-                            if not any(a["filename"] == word_audio for a in word_data["assets"]):
+                        # Check definition audio (variant 0)
+                        def_audio = f"shortdef_{word.uuid}_{sd.id}_0.aac"
+                        if os.path.exists(os.path.join(audio_dir, def_audio)):
+                            if not any(a["filename"] == def_audio for a in word_data["assets"]):
                                 word_data["assets"].append({
-                                    "assetgroup": "word",
-                                    "sid": 0,
-                                    "definition_id": 0,
+                                    "assetgroup": "shortdef",
+                                    "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                    "definition_id": sd.id,
                                     "variant": 0,
                                     "package": None,
-                                    "filename": word_audio,
+                                    "filename": def_audio,
                                     "source": "filesystem"
                                 })
                         
-                        # Check for definition audio and images
-                        for sd in shortdefs:
-                            # Check definition audio (variant 0)
-                            def_audio = f"shortdef_{word.uuid}_{sd.id}_0.aac"
-                            if os.path.exists(os.path.join(audio_dir, def_audio)):
-                                if not any(a["filename"] == def_audio for a in word_data["assets"]):
+                        # Check definition images (both variants)
+                        for variant in range(2):
+                            def_image = f"image_{word.uuid}_{sd.id}_{variant}.png"
+                            if os.path.exists(os.path.join(image_dir, def_image)):
+                                if not any(a["filename"] == def_image for a in word_data["assets"]):
                                     word_data["assets"].append({
-                                        "assetgroup": "shortdef",
-                                        "sid": sd.id * 100,  # sid = def_id * 100 + variant
+                                        "assetgroup": "image",
+                                        "sid": sd.id * 100 + variant,
                                         "definition_id": sd.id,
-                                        "variant": 0,
+                                        "variant": variant,
                                         "package": None,
-                                        "filename": def_audio,
+                                        "filename": def_image,
                                         "source": "filesystem"
                                     })
-                            
-                            # Check definition images (both variants)
-                            for variant in range(2):
-                                def_image = f"image_{word.uuid}_{sd.id}_{variant}.png"
-                                if os.path.exists(os.path.join(image_dir, def_image)):
-                                    if not any(a["filename"] == def_image for a in word_data["assets"]):
-                                        word_data["assets"].append({
-                                            "assetgroup": "image",
-                                            "sid": sd.id * 100 + variant,
-                                            "definition_id": sd.id,
-                                            "variant": variant,
-                                            "package": None,
-                                            "filename": def_image,
-                                            "source": "filesystem"
-                                        })
-                    except Exception as fs_error:
-                        logger.warning(f"Error checking filesystem for assets: {fs_error}")
-        else:
-            from libs.sqlite_dictionary import SQLiteDictionary, Flags
-            sqlite_dict = SQLiteDictionary()
-            tables_exist = True  # SQLiteDictionary ensures schema on init
-            if query:
-                word = sqlite_dict.get_word_by_text(query)
-                if word:
-                    # Build complete word data with definitions and assets
-                    word_data = {
-                        "word": word.word,
-                        "fl": word.functional_label,
-                        "uuid": word.uuid,
-                        "flags": word.flags,
-                        "level": word.level,
-                        "definitions": [],
-                        "assets": []
-                    }
-                    
-                    # Compute human-readable flag names
-                    try:
-                        flags_obj = Flags.from_int(word.flags or 0)
-                        flags_list = []
-                        if flags_obj.offensive:
-                            flags_list.append("Offensive")
-                        if flags_obj.british:
-                            flags_list.append("British")
-                        if flags_obj.us:
-                            flags_list.append("US")
-                        if flags_obj.old_fashioned:
-                            flags_list.append("Old-fashioned")
-                        if flags_obj.informal:
-                            flags_list.append("Informal")
-                        word_data["flags_list"] = flags_list
-                    except Exception:
-                        word_data["flags_list"] = []
-                    
-                    # Get definitions with sid
-                    shortdefs = sqlite_dict.get_shortdefs(word.uuid)
-                    for sd in shortdefs:
-                        word_data["definitions"].append({
-                            "sid": sd.id,
-                            "definition": sd.definition
-                        })
-                    
-                    # Check filesystem for generated assets
-                    try:
-                        audio_dir = os.path.join(ASSET_DIR, "audio")
-                        image_dir = os.path.join(ASSET_DIR, "image")
-                        
-                        # Check for word audio
-                        word_audio = f"word_{word.uuid}_0.aac"
-                        if os.path.exists(os.path.join(audio_dir, word_audio)):
-                            # Check if not already in assets from DB
-                            if not any(a["filename"] == word_audio for a in word_data["assets"]):
-                                word_data["assets"].append({
-                                    "assetgroup": "word",
-                                    "sid": 0,
-                                    "definition_id": 0,
-                                    "variant": 0,
-                                    "package": None,
-                                    "filename": word_audio,
-                                    "source": "filesystem"
-                                })
-                        
-                        # Check for definition audio and images
-                        for sd in shortdefs:
-                            # Check definition audio (variant 0)
-                            def_audio = f"shortdef_{word.uuid}_{sd.id}_0.aac"
-                            if os.path.exists(os.path.join(audio_dir, def_audio)):
-                                if not any(a["filename"] == def_audio for a in word_data["assets"]):
-                                    word_data["assets"].append({
-                                        "assetgroup": "shortdef",
-                                        "sid": sd.id * 100,  # sid = def_id * 100 + variant
-                                        "definition_id": sd.id,
-                                        "variant": 0,
-                                        "package": None,
-                                        "filename": def_audio,
-                                        "source": "filesystem"
-                                    })
-                            
-                            # Check definition images (both variants)
-                            for variant in range(2):
-                                def_image = f"image_{word.uuid}_{sd.id}_{variant}.png"
-                                if os.path.exists(os.path.join(image_dir, def_image)):
-                                    if not any(a["filename"] == def_image for a in word_data["assets"]):
-                                        word_data["assets"].append({
-                                            "assetgroup": "image",
-                                            "sid": sd.id * 100 + variant,
-                                            "definition_id": sd.id,
-                                            "variant": variant,
-                                            "package": None,
-                                            "filename": def_image,
-                                            "source": "filesystem"
-                                        })
-                    except Exception as fs_error:
-                        logger.warning(f"Error checking filesystem for assets: {fs_error}")
+                except Exception as fs_error:
+                    logger.warning(f"Error checking filesystem for assets: {fs_error}")
+
     except Exception as e:
         flash(f"Error searching for word: {e}", "error")
         import traceback
@@ -902,7 +659,7 @@ def build_assets():
         flash(f"Assets build started{limit_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
-    backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
+    backend = "PostgreSQL"
     return render_template(
         "build_assets.html",
         tts_models=TTS_MODELS,
@@ -936,10 +693,41 @@ def build_package():
             args=[db_path, asset_dir, package_dir]
         )
         flash(f"Packaging started (task id: {task.id})", "info")
-        return redirect(url_for("task_status", task_id=task.id))
+        return redirect(url_for("build_package"))
     
     backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
     return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
+
+@app.route("/build_package_db_only", methods=["POST"])
+def build_package_db_only():
+    """Export database tables only (PostgreSQL -> SQLite) without packaging assets"""
+    try:
+        # For DB-only export, we just need to determine output path
+        if POSTGRES_CONN:
+            db_path = os.path.join(STORAGE_DIRECTORY, "Dictionary.sqlite")
+        else:
+            db_path = DICT_PATH
+        
+        # The output_dir parameter is actually ignored by export_database_tables
+        # It writes to STORAGE_DIRECTORY/assets/db.sqlite
+        output_dir = ASSET_DIR
+        
+        # Enqueue only the database export task
+        task = celery.send_task(
+            "scripts.celery_tasks.export_database_tables",
+            args=[db_path, output_dir]
+        )
+        
+        return jsonify({
+            "status": "success",
+            "message": "Database export started",
+            "task_id": task.id
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
 @app.route("/api/package_results")
 def get_package_results():
@@ -994,6 +782,62 @@ def get_download_files():
             "package_files": sorted(package_files)
         })
     except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/create_bundle", methods=["POST"])
+def create_bundle():
+    """Create a timestamped zip bundle of all files in PACKAGE_DIR"""
+    try:
+        from datetime import datetime
+        import tempfile
+        
+        # Generate timestamped filename
+        now = datetime.now()
+        bundle_filename = f"bundle_{now.strftime('%Y%m%d_%H%M')}.zip"
+        
+        # Create temporary zip file
+        temp_dir = tempfile.mkdtemp()
+        temp_zip_path = os.path.join(temp_dir, bundle_filename)
+        
+        pkg_dir = Path(PACKAGE_DIR)
+        if not pkg_dir.exists():
+            return jsonify({"status": "error", "error": "Package directory does not exist"}), 404
+        
+        # Create zip file with all contents of PACKAGE_DIR
+        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            file_count = 0
+            for file_path in pkg_dir.rglob('*'):
+                if file_path.is_file():
+                    # Add file to zip with relative path
+                    arcname = file_path.relative_to(pkg_dir)
+                    zipf.write(file_path, arcname)
+                    file_count += 1
+        
+        if file_count == 0:
+            return jsonify({"status": "error", "error": "No files found in package directory"}), 404
+        
+        # Move temp zip to package directory
+        final_zip_path = pkg_dir / bundle_filename
+        if final_zip_path.exists():
+            final_zip_path.unlink()
+        
+        import shutil
+        shutil.move(temp_zip_path, final_zip_path)
+        
+        # Clean up temp directory
+        try:
+            os.rmdir(temp_dir)
+        except:
+            pass
+        
+        return jsonify({
+            "status": "success",
+            "filename": bundle_filename,
+            "file_count": file_count,
+            "size": final_zip_path.stat().st_size
+        })
+    except Exception as e:
+        logger.error(f"Error creating bundle: {e}", exc_info=True)
         return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route("/download")

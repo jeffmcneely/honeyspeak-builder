@@ -1557,20 +1557,25 @@ def export_database_tables(
     output_dir: str
 ) -> Dict:
     """
-    Export words and shortdef tables from PostgreSQL to STORAGE_DIRECTORY/assets/db.sqlite.
-    This creates a lightweight database containing only the dictionary data
-    without assets or other tables.
+    Export PostgreSQL database to three SQLite files: worddb.sqlite, storydb.sqlite, testdb.sqlite.
+    Creates databases in a temporary location and moves them to assets_dir after completion.
     
     Args:
         db_path: Ignored (kept for compatibility) - reads from PostgreSQL via POSTGRES_CONNECTION env var
-        output_dir: Ignored (kept for compatibility) - writes to STORAGE_DIRECTORY/assets/db.sqlite
+        output_dir: Ignored (kept for compatibility) - writes to STORAGE_DIRECTORY/assets/
     
     Returns:
         Dict with export results
     """
-    import sqlite3
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
+    import tempfile
+    import shutil
+    from pathlib import Path
+    import sys
+    
+    # Add scripts directory to path for imports
+    scripts_dir = Path(__file__).parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
     
     # Setup export-specific log file
     export_log_file = LOGS_DIR / "export_db.txt"
@@ -1588,139 +1593,151 @@ def export_database_tables(
             logger.error(error_msg)
             return {"status": "error", "error": error_msg}
         
-        # Determine output path: STORAGE_DIRECTORY/assets/db.sqlite
+        # Determine output directory: STORAGE_DIRECTORY/assets/
         storage_dir = os.getenv("STORAGE_DIRECTORY", str(Path(__file__).parent.parent))
         assets_dir = os.path.join(storage_dir, "assets")
-        export_db_path = os.path.join(assets_dir, "db.sqlite")
+        os.makedirs(assets_dir, exist_ok=True)
         
-        # Create temporary local path to avoid SMB locking issues
-        import tempfile
+        # Create temporary directory for all exports
         temp_dir = tempfile.mkdtemp()
-        temp_db_path = os.path.join(temp_dir, f"db_export_{os.getpid()}.sqlite")
+        logger.info(f"Created temporary directory: {temp_dir}")
         
-        logger.info(f"Exporting database tables from PostgreSQL to temporary location: {temp_db_path}")
-        logger.info(f"Will copy to final destination: {export_db_path}")
+        # Import conversion functions
+        from convert_postgres_to_sqlite import convert_word_database, convert_story_database, convert_test_database
+        
+        results = {
+            "status": "success",
+            "databases": {}
+        }
         
         try:
-            # Remove existing temp file if it exists
-            if os.path.exists(temp_db_path):
-                os.remove(temp_db_path)
-                logger.info(f"Removed existing temp file: {temp_db_path}")
-            
-            # Connect to PostgreSQL source database
-            pg_conn = psycopg2.connect(pg_conn_str)
-            pg_cursor = pg_conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Connect to SQLite export database (local temp location)
-            export_conn = sqlite3.connect(temp_db_path)
-            export_cursor = export_conn.cursor()
-            
-            # Create the tables in the export database
-            export_conn.execute("""CREATE TABLE words (
-                word TEXT NOT NULL,
-                functional_label TEXT,
-                uuid TEXT PRIMARY KEY,
-                flags INTEGER DEFAULT 0,
-                level TEXT
-            )""")
-            export_conn.execute("""CREATE INDEX idx_words_word ON words(word)""")
-            export_conn.execute("""CREATE INDEX idx_words_level ON words(level)""")
-            
-            export_conn.execute("""CREATE TABLE shortdef (
-                uuid TEXT,
-                definition TEXT,
-                id INTEGER PRIMARY KEY,
-                FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-                UNIQUE(uuid, definition)
-            )""")
-            export_conn.execute("""CREATE INDEX idx_shortdef_uuid ON shortdef(uuid)""")
-            
-            # Copy words table from PostgreSQL
-            logger.info("Fetching words from PostgreSQL...")
-            pg_cursor.execute("SELECT word, functional_label, uuid, flags, level FROM words ORDER BY word")
-            words_data = pg_cursor.fetchall()
-            
-            # Convert dict rows to tuples for SQLite
-            words_tuples = [(row['word'], row['functional_label'], row['uuid'], row['flags'], row['level']) 
-                           for row in words_data]
-            
-            export_cursor.executemany(
-                "INSERT INTO words (word, functional_label, uuid, flags, level) VALUES (?, ?, ?, ?, ?)",
-                words_tuples
+            # Export word database
+            logger.info("=" * 60)
+            logger.info("Exporting word database...")
+            logger.info("=" * 60)
+            temp_word_path = os.path.join(temp_dir, "worddb.sqlite")
+            word_success = convert_word_database(
+                postgres_conn=pg_conn_str,
+                sqlite_path=temp_word_path,
+                batch_size=1000
             )
-            logger.info(f"Copied {len(words_data)} words from PostgreSQL")
             
-            # Copy shortdef table from PostgreSQL
-            logger.info("Fetching definitions from PostgreSQL...")
-            pg_cursor.execute("SELECT uuid, definition, id FROM shortdef ORDER BY id")
-            shortdef_data = pg_cursor.fetchall()
+            if word_success:
+                # Move to final location
+                final_word_path = os.path.join(assets_dir, "worddb.sqlite")
+                if os.path.exists(final_word_path):
+                    os.remove(final_word_path)
+                    logger.info(f"Removed existing {final_word_path}")
+                
+                shutil.move(temp_word_path, final_word_path)
+                word_size = os.path.getsize(final_word_path)
+                logger.info(f"Moved worddb.sqlite to {final_word_path} ({word_size:,} bytes)")
+                
+                results["databases"]["worddb"] = {
+                    "status": "success",
+                    "path": final_word_path,
+                    "size": word_size
+                }
+            else:
+                results["databases"]["worddb"] = {
+                    "status": "failed",
+                    "error": "Conversion returned False"
+                }
+                logger.error("Word database conversion failed")
             
-            # Convert dict rows to tuples for SQLite
-            shortdef_tuples = [(row['uuid'], row['definition'], row['id']) 
-                              for row in shortdef_data]
-            
-            export_cursor.executemany(
-                "INSERT INTO shortdef (uuid, definition, id) VALUES (?, ?, ?)",
-                shortdef_tuples
+            # Export story database
+            logger.info("=" * 60)
+            logger.info("Exporting story database...")
+            logger.info("=" * 60)
+            temp_story_path = os.path.join(temp_dir, "storydb.sqlite")
+            story_success = convert_story_database(
+                postgres_conn=pg_conn_str,
+                sqlite_path=temp_story_path,
+                batch_size=1000
             )
-            logger.info(f"Copied {len(shortdef_data)} definitions from PostgreSQL")
             
-            # Commit and close
-            export_conn.commit()
-            export_conn.close()
-            pg_cursor.close()
-            pg_conn.close()
+            if story_success:
+                # Move to final location
+                final_story_path = os.path.join(assets_dir, "storydb.sqlite")
+                if os.path.exists(final_story_path):
+                    os.remove(final_story_path)
+                    logger.info(f"Removed existing {final_story_path}")
+                
+                shutil.move(temp_story_path, final_story_path)
+                story_size = os.path.getsize(final_story_path)
+                logger.info(f"Moved storydb.sqlite to {final_story_path} ({story_size:,} bytes)")
+                
+                results["databases"]["storydb"] = {
+                    "status": "success",
+                    "path": final_story_path,
+                    "size": story_size
+                }
+            else:
+                results["databases"]["storydb"] = {
+                    "status": "failed",
+                    "error": "Conversion returned False"
+                }
+                logger.error("Story database conversion failed")
             
-            # Get size of local temp file
-            temp_size = os.path.getsize(temp_db_path)
-            logger.info(f"Successfully created temp database: {temp_db_path} ({temp_size:,} bytes)")
+            # Export test database
+            logger.info("=" * 60)
+            logger.info("Exporting test database...")
+            logger.info("=" * 60)
+            temp_test_path = os.path.join(temp_dir, "testdb.sqlite")
+            test_success = convert_test_database(
+                postgres_conn=pg_conn_str,
+                sqlite_path=temp_test_path,
+                batch_size=1000
+            )
             
-            # Create output directory if needed
-            os.makedirs(assets_dir, exist_ok=True)
+            if test_success:
+                # Move to final location
+                final_test_path = os.path.join(assets_dir, "testdb.sqlite")
+                if os.path.exists(final_test_path):
+                    os.remove(final_test_path)
+                    logger.info(f"Removed existing {final_test_path}")
+                
+                shutil.move(temp_test_path, final_test_path)
+                test_size = os.path.getsize(final_test_path)
+                logger.info(f"Moved testdb.sqlite to {final_test_path} ({test_size:,} bytes)")
+                
+                results["databases"]["testdb"] = {
+                    "status": "success",
+                    "path": final_test_path,
+                    "size": test_size
+                }
+            else:
+                results["databases"]["testdb"] = {
+                    "status": "failed",
+                    "error": "Conversion returned False"
+                }
+                logger.error("Test database conversion failed")
             
-            # Remove existing db.sqlite in destination if it exists
-            if os.path.exists(export_db_path):
-                try:
-                    os.remove(export_db_path)
-                    logger.info(f"Removed existing {export_db_path}")
-                except Exception as e:
-                    logger.warning(f"Could not remove existing file (may be locked): {e}")
+            # Check if any database failed
+            failed_dbs = [db for db, info in results["databases"].items() if info["status"] == "failed"]
+            if failed_dbs:
+                results["status"] = "partial"
+                results["failed_databases"] = failed_dbs
+                logger.warning(f"Some databases failed to export: {failed_dbs}")
+            else:
+                logger.info("All databases exported successfully!")
             
-            # Copy temp file to final destination
-            import shutil
-            logger.info(f"Copying {temp_db_path} to {export_db_path}")
-            shutil.copy2(temp_db_path, export_db_path)
+            return results
             
-            export_size = os.path.getsize(export_db_path)
-            logger.info(f"Successfully copied to {export_db_path} ({export_size:,} bytes)")
-            
-            # Clean up temp file
-            try:
-                os.remove(temp_db_path)
-                logger.info(f"Removed temp file: {temp_db_path}")
-            except Exception as e:
-                logger.warning(f"Could not remove temp file: {e}")
-            
-            return {
-                "status": "success",
-                "export_path": export_db_path,
-                "words_count": len(words_data),
-                "definitions_count": len(shortdef_data),
-                "file_size": export_size
-            }
         except Exception as e:
-            logger.error(f"Error exporting database tables: {e}", exc_info=True)
-            # Clean up temp file on error
-            try:
-                if os.path.exists(temp_db_path):
-                    os.remove(temp_db_path)
-                    logger.info(f"Cleaned up temp file after error: {temp_db_path}")
-            except Exception as cleanup_error:
-                logger.warning(f"Could not clean up temp file: {cleanup_error}")
+            logger.error(f"Error during database export: {e}", exc_info=True)
             return {
                 "status": "error",
                 "error": str(e)
             }
+        finally:
+            # Clean up temporary directory
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as cleanup_error:
+                logger.warning(f"Could not clean up temp directory: {cleanup_error}")
+    
     finally:
         # Remove the export-specific log handler
         logger.removeHandler(file_handler)

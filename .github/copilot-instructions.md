@@ -153,3 +153,5 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 - New Flask routes: add to `scripts/app.py` or create a blueprint like `moderator.py`.
 - **DO NOT add new `external_assets` write operations.** The table is deprecated for writes.
 - When editing a HTML page add ID attributes to most elements for easier automated testing.
+- Web pages should use AJAX for any task that is expected to take more than a second.
+- Web pages should return status inline rather than with flash messages for better UX.

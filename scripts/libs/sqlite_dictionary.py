@@ -5,7 +5,7 @@ import uuid
 from typing import Literal, Optional, Iterable, List
 import warnings
 
-SQLITE_SCHEMA = [
+SQLITE_WORD_SCHEMA = [
     # words: uuid is the PRIMARY KEY; index on word for faster lookups
     """CREATE TABLE IF NOT EXISTS words (
         word TEXT NOT NULL,
@@ -26,18 +26,9 @@ SQLITE_SCHEMA = [
         UNIQUE(uuid, definition)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_shortdef_uuid ON shortdef(uuid)""",
-    """CREATE TABLE IF NOT EXISTS external_assets (
-        uuid TEXT,
-        assetgroup TEXT,
-        sid INTEGER,
-        variant INTEGER,
-        package TEXT NOT NULL CHECK(length(package) = 2),
-        filename TEXT,
-        FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-        UNIQUE(uuid, assetgroup, sid, variant)
-    )""",
-    """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
-    """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
+
+]
+SQLITE_STORY_SCHEMA = [
     """CREATE TABLE IF NOT EXISTS stories (
         uuid TEXT,
         title TEXT,
@@ -67,6 +58,8 @@ SQLITE_SCHEMA = [
         )""",
     """CREATE INDEX IF NOT EXISTS idx_story_words_uuid ON story_words(story_uuid)""",
     """CREATE INDEX IF NOT EXISTS idx_story_words_word_uuid ON story_words(word_uuid)""",
+]
+SQLITE_TEST_SCHEMA = [
     """CREATE TABLE test (
         id         INTEGER PRIMARY KEY,
         name       TEXT NOT NULL,

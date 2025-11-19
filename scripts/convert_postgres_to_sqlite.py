@@ -22,8 +22,158 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+def convert_test_database(postgres_conn: str = None, sqlite_path: str = "testdb.sqlite", batch_size: int = 1000):
+    """
+    Convert PostgreSQL test/question/answer tables to SQLite.
+    
+    Args:
+        postgres_conn: PostgreSQL connection string (uses env if not provided)
+        sqlite_path: Path for output SQLite database
+        batch_size: Number of records to process at once
+    """
+    from libs.pg_test import PostgresTestDatabase
+    from libs.sqlite_dictionary import SQLITE_TEST_SCHEMA
+    import sqlite3
+    
+    # Get PostgreSQL connection
+    postgres_conn = postgres_conn or os.getenv("POSTGRES_CONNECTION")
+    if not postgres_conn:
+        raise ValueError("POSTGRES_CONNECTION not set and no connection string provided")
+    
+    logger.info(f"Connecting to PostgreSQL...")
+    pg_db = PostgresTestDatabase(postgres_conn)
+    
+    # Create SQLite database
+    logger.info(f"Creating SQLite database: {sqlite_path}")
+    
+    # Remove existing file if present
+    if Path(sqlite_path).exists():
+        logger.warning(f"Removing existing file: {sqlite_path}")
+        Path(sqlite_path).unlink()
+    
+    # Create and initialize SQLite database
+    conn = sqlite3.connect(sqlite_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Set pragmas for production
+        logger.info("Setting SQLite pragmas...")
+        cursor.execute("PRAGMA journal_mode = DELETE")  # No WAL for production
+        cursor.execute("PRAGMA synchronous = FULL")  # Maximum durability
+        cursor.execute("PRAGMA foreign_keys = ON")
+        
+        # Create schema
+        logger.info("Creating SQLite schema...")
+        for stmt in SQLITE_TEST_SCHEMA:
+            cursor.execute(stmt)
+        conn.commit()
+        
+        # Transfer tests
+        try:
+            tests = pg_db.get_all_tests()
+            if tests:
+                logger.info(f"Transferring {len(tests)} tests...")
+                
+                test_count = 0
+                question_count = 0
+                answer_count = 0
+                
+                for test in tests:
+                    # Insert test
+                    cursor.execute(
+                        """INSERT INTO test (id, name, version, created_at)
+                           VALUES (?, ?, ?, ?)""",
+                        (test.id, test.name, test.version, test.created_at.isoformat())
+                    )
+                    test_count += 1
+                    
+                    # Get and transfer questions for this test
+                    questions = pg_db.get_questions_for_test(test.id)
+                    for question in questions:
+                        cursor.execute(
+                            """INSERT INTO question 
+                               (id, test_id, level, prompt, explanation, flags)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            (question.id, question.test_id, question.level, 
+                             question.prompt, question.explanation, question.flags)
+                        )
+                        question_count += 1
+                        
+                        # Get and transfer answers for this question
+                        answers = pg_db.get_answers_for_question(question.id)
+                        for answer in answers:
+                            cursor.execute(
+                                """INSERT INTO answer 
+                                   (id, question_id, body_uuid, is_correct, weight)
+                                   VALUES (?, ?, ?, ?, ?)""",
+                                (answer.id, answer.question_id, answer.body_uuid,
+                                 1 if answer.is_correct else 0, answer.weight)
+                            )
+                            answer_count += 1
+                    
+                    if test_count % 10 == 0:
+                        conn.commit()
+                        logger.info(f"  Transferred {test_count} tests, {question_count} questions, {answer_count} answers...")
+                
+                conn.commit()
+                logger.info(f"  Tests, questions, and answers transferred")
+                logger.info(f"  Total: {test_count} tests, {question_count} questions, {answer_count} answers")
+        except Exception as e:
+            logger.warning(f"Could not transfer tests: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        logger.info("Verifying conversion...")
+        cursor.execute("SELECT COUNT(*) FROM test")
+        sqlite_test_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM question")
+        sqlite_question_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM answer")
+        sqlite_answer_count = cursor.fetchone()[0]
+        
+        logger.info(f"Verification:")
+        logger.info(f"  Tests: {sqlite_test_count}")
+        logger.info(f"  Questions: {sqlite_question_count}")
+        logger.info(f"  Answers: {sqlite_answer_count}")
+        
+        # Run VACUUM to optimize the database
+        logger.info("Optimizing SQLite database...")
+        cursor.execute("VACUUM")
+        
+        conn.close()
+        
+        # Verify file size
+        file_size = Path(sqlite_path).stat().st_size
+        logger.info(f"SQLite database created: {sqlite_path} ({file_size:,} bytes)")
+        
+        # Clean up any WAL/SHM files that might have been created
+        for suffix in ['-wal', '-shm']:
+            wal_file = Path(f"{sqlite_path}{suffix}")
+            if wal_file.exists():
+                wal_file.unlink()
+                logger.info(f"Removed {wal_file}")
+        
+        logger.info("Conversion complete!")
+        return True
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
+        import traceback
+        traceback.print_exc()
+        conn.rollback()
+        conn.close()
+        
+        # Clean up partial file
+        if Path(sqlite_path).exists():
+            Path(sqlite_path).unlink()
+        
+        return False
 
-def convert_database(postgres_conn: str = None, sqlite_path: str = "production.sqlite", batch_size: int = 1000):
+
+
+def convert_story_database(postgres_conn: str = None, sqlite_path: str = "stories.sqlite", batch_size: int = 1000):
+
     """
     Convert PostgreSQL database to SQLite.
     
@@ -33,7 +183,7 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         batch_size: Number of records to process at once
     """
     from libs.pg_dictionary import PostgresDictionary
-    from libs.sqlite_dictionary import SQLiteDictionary, SQLITE_SCHEMA
+    from libs.sqlite_dictionary import SQLiteDictionary, SQLITE_TEST_SCHEMA, SQLITE_STORY_SCHEMA
     import sqlite3
     
     # Get PostgreSQL connection
@@ -65,7 +215,134 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         
         # Create schema
         logger.info("Creating SQLite schema...")
-        for stmt in SQLITE_SCHEMA:
+        for stmt in SQLITE_STORY_SCHEMA:
+            cursor.execute(stmt)
+        conn.commit()
+        
+        # Transfer stories if they exist
+        try:
+            stories = pg_db.get_all_stories()
+            if stories:
+                logger.info(f"Transferring {len(stories)} stories...")
+                
+                for story in stories:
+                    cursor.execute(
+                        """INSERT INTO stories (uuid, title, style, grouping, difficulty)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (story.uuid, story.title, story.style, story.grouping, story.difficulty)
+                    )
+                    
+                    # Get and transfer paragraphs
+                    paragraphs = pg_db.get_story_paragraphs(story.uuid)
+                    for para in paragraphs:
+                        cursor.execute(
+                            """INSERT INTO story_paragraphs 
+                               (story_uuid, paragraph_index, paragraph_title, content)
+                               VALUES (?, ?, ?, ?)""",
+                            (para.story_uuid, para.paragraph_index, para.paragraph_title, para.content)
+                        )
+                
+                conn.commit()
+                logger.info(f"  Stories and paragraphs transferred")
+        except Exception as e:
+            logger.warning(f"Could not transfer stories: {e}")
+        logger.info("Verifying conversion...")
+        cursor.execute("SELECT COUNT(*) FROM stories")
+        sqlite_story_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM story_paragraphs")
+        sqlite_paragraph_count = cursor.fetchone()[0]
+        
+        
+        pg_word_count = pg_db.get_word_count()
+        pg_def_count = pg_db.get_shortdef_count()
+        
+        logger.info(f"Verification:")
+        logger.info(f"  Words: PostgreSQL={pg_word_count}, SQLite={sqlite_story_count}")
+        logger.info(f"  Definitions: PostgreSQL={pg_def_count}, SQLite={sqlite_paragraph_count}")
+        
+        if sqlite_story_count != pg_word_count:
+            logger.error("Word count mismatch!")
+        if sqlite_paragraph_count != pg_def_count:
+            logger.error("Definition count mismatch!")
+        
+        # Run VACUUM to optimize the database
+        logger.info("Optimizing SQLite database...")
+        cursor.execute("VACUUM")
+        
+        conn.close()
+        
+        # Verify file size
+        file_size = Path(sqlite_path).stat().st_size
+        logger.info(f"SQLite database created: {sqlite_path} ({file_size:,} bytes)")
+        
+        # Clean up any WAL/SHM files that might have been created
+        for suffix in ['-wal', '-shm']:
+            wal_file = Path(f"{sqlite_path}{suffix}")
+            if wal_file.exists():
+                wal_file.unlink()
+                logger.info(f"Removed {wal_file}")
+        
+        logger.info("Conversion complete!")
+        return True
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
+        import traceback
+        traceback.print_exc()
+        conn.rollback()
+        conn.close()
+        
+        # Clean up partial file
+        if Path(sqlite_path).exists():
+            Path(sqlite_path).unlink()
+        
+        return False
+
+
+
+def convert_word_database(postgres_conn: str = None, sqlite_path: str = "production.sqlite", batch_size: int = 1000):
+    """
+    Convert PostgreSQL database to SQLite.
+    
+    Args:
+        postgres_conn: PostgreSQL connection string (uses env if not provided)
+        sqlite_path: Path for output SQLite database
+        batch_size: Number of records to process at once
+    """
+    from libs.pg_dictionary import PostgresDictionary
+    from libs.sqlite_dictionary import SQLiteDictionary, SQLITE_WORD_SCHEMA
+    import sqlite3
+    
+    # Get PostgreSQL connection
+    postgres_conn = postgres_conn or os.getenv("POSTGRES_CONNECTION")
+    if not postgres_conn:
+        raise ValueError("POSTGRES_CONNECTION not set and no connection string provided")
+    
+    logger.info(f"Connecting to PostgreSQL...")
+    pg_db = PostgresDictionary(postgres_conn)
+    
+    # Create SQLite database
+    logger.info(f"Creating SQLite database: {sqlite_path}")
+    
+    # Remove existing file if present
+    if Path(sqlite_path).exists():
+        logger.warning(f"Removing existing file: {sqlite_path}")
+        Path(sqlite_path).unlink()
+    
+    # Create and initialize SQLite database
+    conn = sqlite3.connect(sqlite_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Set pragmas for production
+        logger.info("Setting SQLite pragmas...")
+        cursor.execute("PRAGMA journal_mode = DELETE")  # No WAL for production
+        cursor.execute("PRAGMA synchronous = FULL")  # Maximum durability
+        cursor.execute("PRAGMA foreign_keys = ON")
+        
+        # Create schema
+        logger.info("Creating SQLite schema...")
+        for stmt in SQLITE_WORD_SCHEMA:
             cursor.execute(stmt)
         conn.commit()
         
@@ -109,58 +386,6 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         conn.commit()
         logger.info(f"  Total definitions transferred: {shortdef_count}")
         
-        # Transfer external_assets
-        logger.info("Transferring external assets...")
-        asset_count = 0
-        
-        for word in words:
-            assets = pg_db.get_external_assets(word.uuid)
-            for asset in assets:
-                cursor.execute(
-                    """INSERT INTO external_assets (uuid, assetgroup, sid, package, filename) 
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (asset.uuid, asset.assetgroup, asset.sid, asset.package, asset.filename)
-                )
-                asset_count += 1
-            
-            if asset_count > 0 and asset_count % 1000 == 0:
-                logger.info(f"  Transferred {asset_count} assets...")
-                conn.commit()
-        
-        conn.commit()
-        if asset_count > 0:
-            logger.info(f"  Total assets transferred: {asset_count}")
-        else:
-            logger.info(f"  No assets to transfer")
-        
-        # Transfer stories if they exist
-        try:
-            stories = pg_db.get_all_stories()
-            if stories:
-                logger.info(f"Transferring {len(stories)} stories...")
-                
-                for story in stories:
-                    cursor.execute(
-                        """INSERT INTO stories (uuid, title, style, grouping, difficulty)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (story.uuid, story.title, story.style, story.grouping, story.difficulty)
-                    )
-                    
-                    # Get and transfer paragraphs
-                    paragraphs = pg_db.get_story_paragraphs(story.uuid)
-                    for para in paragraphs:
-                        cursor.execute(
-                            """INSERT INTO story_paragraphs 
-                               (story_uuid, paragraph_index, paragraph_title, content)
-                               VALUES (?, ?, ?, ?)""",
-                            (para.story_uuid, para.paragraph_index, para.paragraph_title, para.content)
-                        )
-                
-                conn.commit()
-                logger.info(f"  Stories and paragraphs transferred")
-        except Exception as e:
-            logger.warning(f"Could not transfer stories: {e}")
-        
         # Verify the conversion
         logger.info("Verifying conversion...")
         cursor.execute("SELECT COUNT(*) FROM words")
@@ -169,24 +394,18 @@ def convert_database(postgres_conn: str = None, sqlite_path: str = "production.s
         cursor.execute("SELECT COUNT(*) FROM shortdef")
         sqlite_def_count = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM external_assets")
-        sqlite_asset_count = cursor.fetchone()[0]
         
         pg_word_count = pg_db.get_word_count()
         pg_def_count = pg_db.get_shortdef_count()
-        pg_asset_count = pg_db.get_asset_count()
         
         logger.info(f"Verification:")
         logger.info(f"  Words: PostgreSQL={pg_word_count}, SQLite={sqlite_word_count}")
         logger.info(f"  Definitions: PostgreSQL={pg_def_count}, SQLite={sqlite_def_count}")
-        logger.info(f"  Assets: PostgreSQL={pg_asset_count}, SQLite={sqlite_asset_count}")
         
         if sqlite_word_count != pg_word_count:
             logger.error("Word count mismatch!")
         if sqlite_def_count != pg_def_count:
             logger.error("Definition count mismatch!")
-        if sqlite_asset_count != pg_asset_count:
-            logger.error("Asset count mismatch!")
         
         # Run VACUUM to optimize the database
         logger.info("Optimizing SQLite database...")
@@ -249,7 +468,7 @@ def main():
     args = parser.parse_args()
     
     # Run conversion
-    success = convert_database(
+    success = convert_word_database(
         postgres_conn=args.connection,
         sqlite_path=args.output,
         batch_size=args.batch_size

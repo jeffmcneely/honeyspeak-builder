@@ -294,8 +294,8 @@ def main():
         print(f"[PACKAGE] Final destination: {final_db_destination}")
         print(f"Converting Postgres -> SQLite for packaging: {temp_db_path}")
         
-        from scripts.convert_postgres_to_sqlite import convert_database
-        ok = convert_database(postgres_conn, temp_db_path)
+        from scripts.convert_postgres_to_sqlite import convert_word_database
+        ok = convert_word_database(postgres_conn, temp_db_path)
         if not ok:
             print("Conversion failed - aborting packaging")
             shutil.rmtree(temp_dir, ignore_errors=True)

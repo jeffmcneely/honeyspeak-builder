@@ -26,8 +26,11 @@
                         <small class="text-muted">Directory where package files will be created</small>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="btn-start-packaging">
                         <i class="bi bi-box-seam"></i> Start Packaging
+                    </button>
+                    <button type="button" class="btn btn-info" id="btn-package-db-only">
+                        <i class="bi bi-database"></i> Package DB Only
                     </button>
                     <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
                 </form>
@@ -65,13 +68,13 @@
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-6">
-                        <h6>SQLite Database</h6>
+                    <div class="col-md-4">
+                        <h6>SQLite Databases</h6>
                         <div id="db-files-container">
                             <p class="text-muted">Loading database files...</p>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-8">
                         <h6>Package Files</h6>
                         <div id="package-files-container">
                             <p class="text-muted">Loading package files...</p>
@@ -131,6 +134,27 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(function() {
+    // Package DB Only button handler
+    $('#btn-package-db-only').click(function() {
+        var btn = $(this);
+        btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Exporting...');
+        
+        $.post('/build_package_db_only', function(data) {
+            if (data.status === 'success') {
+                btn.removeClass('btn-info').addClass('btn-success').html('<i class="bi bi-check-circle"></i> Export Started');
+                setTimeout(function() {
+                    btn.prop('disabled', false).removeClass('btn-success').addClass('btn-info').html('<i class="bi bi-database"></i> Package DB Only');
+                }, 3000);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.prop('disabled', false).html('<i class="bi bi-database"></i> Package DB Only');
+            }
+        }).fail(function() {
+            alert('Failed to start database export');
+            btn.prop('disabled', false).html('<i class="bi bi-database"></i> Package DB Only');
+        });
+    });
+    
     // Load download files on page load
     loadDownloadFiles();
     
@@ -165,12 +189,30 @@ function loadDownloadFiles() {
         
         // Display database files
         if (data.db_files && data.db_files.length > 0) {
-            var dbHtml = '<ul class="list-unstyled">';
+            var dbHtml = '<div class="list-group">';
             data.db_files.forEach(function(file) {
-                dbHtml += '<li><a href="/download_file/' + file + '" class="btn btn-sm btn-outline-primary mb-1">';
-                dbHtml += '<i class="bi bi-download"></i> ' + file + '</a></li>';
+                // Create friendly label for database files
+                var label = file;
+                var icon = 'bi-database';
+                var badge = '';
+                
+                if (file.includes('worddb')) {
+                    label = 'Word Dictionary';
+                    badge = '<span class="badge bg-primary ms-2">Words</span>';
+                } else if (file.includes('storydb')) {
+                    label = 'Stories Database';
+                    badge = '<span class="badge bg-success ms-2">Stories</span>';
+                } else if (file.includes('testdb')) {
+                    label = 'Tests Database';
+                    badge = '<span class="badge bg-info ms-2">Tests</span>';
+                }
+                
+                dbHtml += '<a href="/download_file/' + file + '" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" id="db-link-' + file.replace('.', '-') + '">';
+                dbHtml += '<span><i class="' + icon + '"></i> ' + label + '</span>';
+                dbHtml += badge;
+                dbHtml += '</a>';
             });
-            dbHtml += '</ul>';
+            dbHtml += '</div>';
             $('#db-files-container').html(dbHtml);
         } else {
             $('#db-files-container').html('<p class="text-muted">No database files available</p>');
@@ -179,8 +221,8 @@ function loadDownloadFiles() {
         // Display package files
         if (data.package_files && data.package_files.length > 0) {
             var pkgHtml = '<div class="mb-2">';
-            pkgHtml += '<a href="#" id="download-all-packages" class="btn btn-sm btn-success mb-2">';
-            pkgHtml += '<i class="bi bi-download"></i> Download All</a>';
+            pkgHtml += '<button id="create-bundle-btn" class="btn btn-sm btn-success mb-2">';
+            pkgHtml += '<i class="bi bi-file-zip"></i> Create Bundle</button>';
             pkgHtml += '</div>';
             pkgHtml += '<div class="d-flex flex-wrap gap-1">';
             data.package_files.forEach(function(file) {
@@ -192,39 +234,41 @@ function loadDownloadFiles() {
             pkgHtml += '</div>';
             $('#package-files-container').html(pkgHtml);
             
-            // Add click handler for download all
-            $('#download-all-packages').click(function(e) {
+            // Add click handler for create bundle
+            $('#create-bundle-btn').click(function(e) {
                 e.preventDefault();
                 
-                // Combine all files to download
-                var allFiles = [];
-                if (data.db_files && data.db_files.length > 0) {
-                    allFiles = allFiles.concat(data.db_files);
-                }
-                allFiles = allFiles.concat(data.package_files);
+                var btn = $(this);
+                btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Creating bundle...');
                 
-                // Download files sequentially with delay to avoid browser blocking
-                var currentIndex = 0;
-                function downloadNext() {
-                    if (currentIndex >= allFiles.length) {
-                        return;
+                $.post('/api/create_bundle', function(response) {
+                    if (response.status === 'success') {
+                        btn.html('<i class="bi bi-check-circle"></i> Bundle created!');
+                        
+                        // Trigger download
+                        var link = document.createElement('a');
+                        link.href = '/download_file/' + response.filename;
+                        link.download = response.filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // Reset button after 2 seconds
+                        setTimeout(function() {
+                            btn.prop('disabled', false).html('<i class="bi bi-file-zip"></i> Create Bundle');
+                        }, 2000);
+                    } else {
+                        alert('Error creating bundle: ' + (response.error || 'Unknown error'));
+                        btn.prop('disabled', false).html('<i class="bi bi-file-zip"></i> Create Bundle');
                     }
-                    
-                    var file = allFiles[currentIndex];
-                    var link = document.createElement('a');
-                    link.href = '/download_file/' + file;
-                    link.download = file;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    currentIndex++;
-                    if (currentIndex < allFiles.length) {
-                        setTimeout(downloadNext, 500); // 500ms delay between downloads
+                }).fail(function(xhr) {
+                    var error = 'Failed to create bundle';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        error = xhr.responseJSON.error;
                     }
-                }
-                
-                downloadNext();
+                    alert('Error: ' + error);
+                    btn.prop('disabled', false).html('<i class="bi bi-file-zip"></i> Create Bundle');
+                });
             });
         } else {
             $('#package-files-container').html('<p class="text-muted">No package files available</p>');

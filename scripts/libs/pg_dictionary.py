@@ -29,17 +29,6 @@ POSTGRES_SCHEMA = [
         UNIQUE(uuid, definition)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_shortdef_uuid ON shortdef(uuid)""",
-    """CREATE TABLE IF NOT EXISTS external_assets (
-        uuid TEXT,
-        assetgroup TEXT,
-        sid INTEGER,
-        package TEXT NOT NULL CHECK(length(package) = 2),
-        filename TEXT,
-        FOREIGN KEY (uuid) REFERENCES words(uuid) ON DELETE CASCADE,
-        UNIQUE(uuid, assetgroup, sid)
-    )""",
-    """CREATE INDEX IF NOT EXISTS idx_external_assets_type_int ON external_assets(assetgroup,sid)""",
-    """CREATE INDEX IF NOT EXISTS idx_external_assets_uuid ON external_assets(uuid)""",
     """CREATE TABLE IF NOT EXISTS stories (
         uuid TEXT,
         title TEXT,
