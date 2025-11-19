@@ -31,9 +31,7 @@ Use PostgreSQL during development for better concurrent access with multiple Cel
 Convert to SQLite for iOS deployment (single-file database with no WAL files).
 
 ### Backend Selection
-The system automatically selects the database backend:
-- If `POSTGRES_CONNECTION` is set → uses PostgreSQL
-- Otherwise → uses SQLite at `DATABASE_PATH`
+- Always use PostgreSQL for user interaction and then repackage to SQLite for production.
 
 ## Quick Start
 

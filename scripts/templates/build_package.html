@@ -8,10 +8,6 @@
         <div class="card">
             <div class="card-body">
                 <form method="POST">
-                    <div class="alert alert-info">
-                        <strong>Database Backend:</strong> {{ backend }}
-                    </div>
-                    
                     <h5>Package Options</h5>
                     
                     <div class="mb-3">
@@ -49,11 +45,6 @@
                     <li>Files will be split into ~100MB packages</li>
                     <li>Database will be updated with package locations</li>
                 </ul>
-                {% if backend and 'PostgreSQL' in backend %}
-                <div class="alert alert-warning mt-3">
-                    <strong>Note:</strong> PostgreSQL data will be converted to SQLite format for packaging.
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>

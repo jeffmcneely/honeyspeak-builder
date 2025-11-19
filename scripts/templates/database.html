@@ -12,35 +12,13 @@
             <div class="card-body">
                 <h5 class="card-title">Database Status</h5>
                 
-                <div class="mb-3">
-                    <strong>Backend:</strong> 
-                    <span class="badge {{ 'bg-primary' if backend == 'PostgreSQL' else 'bg-secondary' }}">
-                        {{ backend }}
-                    </span>
-                </div>
                 
-                {% if backend == 'PostgreSQL' %}
                 <div class="mb-3">
                     <strong>Connection:</strong>
                     <span class="badge {{ 'bg-success' if connected else 'bg-danger' }}">
                         {{ 'Connected' if connected else 'Not Connected' }}
                     </span>
                 </div>
-                {% else %}
-                <div class="mb-3">
-                    <strong>Database Path:</strong>
-                    <code>{{ db_path }}</code>
-                    <br>
-                    <strong>Exists:</strong>
-                    <span class="badge {{ 'bg-success' if db_exists else 'bg-warning' }}">
-                        {{ 'Yes' if db_exists else 'No' }}
-                    </span>
-                    {% if db_exists %}
-                    <br>
-                    <strong>Size:</strong> {{ db_size }}
-                    {% endif %}
-                </div>
-                {% endif %}
                 
                 <div class="mb-3">
                     <strong>Tables:</strong>

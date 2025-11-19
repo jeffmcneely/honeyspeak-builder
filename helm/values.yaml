@@ -28,7 +28,6 @@ env:
   COMFYUI_SERVER: ""
   # ComfyUI output folder - mounted directory where ComfyUI saves generated images
   COMFY_OUTPUT_FOLDER: ""
-  # PostgreSQL connection string. Set this to enable the PostgreSQL backend.
   # The application reads POSTGRES_CONNECTION; POSTGRES_CONN is provided
   # as an alias for backwards compatibility.
   POSTGRES_CONNECTION: ""

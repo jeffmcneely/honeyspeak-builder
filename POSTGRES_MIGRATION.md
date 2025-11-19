@@ -60,11 +60,7 @@ python scripts/build_dictionary.py noun1.txt
 ```
 
 ## Database Backend Selection
-
-The system automatically chooses the backend based on the `POSTGRES_CONNECTION` environment variable:
-
-- **If `POSTGRES_CONNECTION` is set**: Uses PostgreSQL
-- **If `POSTGRES_CONNECTION` is not set**: Falls back to SQLite
+- Uses PostgreSQL
 
 All Python scripts use the unified `Dictionary` interface from `libs/dictionary.py`:
 
@@ -186,6 +182,4 @@ The converter validates record counts. If mismatches occur:
 
 1. **Development Speed**: PostgreSQL handles concurrent Celery workers better
 2. **Production Simplicity**: SQLite is perfect for iOS deployment
-3. **Code Reuse**: Same API for both backends
 4. **Easy Migration**: Simple conversion script for production
-5. **Flexibility**: Can switch backends by changing environment variable

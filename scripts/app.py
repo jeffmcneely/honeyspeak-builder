@@ -341,7 +341,6 @@ def init_database():
             return jsonify({
                 "status": "success",
                 "message": f"PostgreSQL database initialized successfully",
-                "backend": "PostgreSQL",
                 "word_count": word_count
             })
         except Exception as e:
@@ -351,7 +350,6 @@ def init_database():
             return jsonify({
                 "status": "error",
                 "message": str(e),
-                "backend": "PostgreSQL"
             }), 500
 
 
@@ -466,14 +464,11 @@ def build_dictionary():
         return redirect(url_for("task_status", task_id=task.id))
     
     # GET request - handle word search if query provided
-    backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
     query = request.args.get("query", "").strip()
     word_data = None
     tables_exist = False
     
     try:
-        if not POSTGRES_CONN:
-            flash("Word search is only available when using PostgreSQL backend.", "warning")
         from libs.pg_dictionary import PostgresDictionary
         from libs.sqlite_dictionary import Flags
         pg_dict = PostgresDictionary()
@@ -577,7 +572,6 @@ def build_dictionary():
         traceback.print_exc()
     
     return render_template("build_dictionary.html", 
-                         backend=backend, 
                          query=query, 
                          word_data=word_data,
                          tables_exist=tables_exist)
@@ -591,7 +585,6 @@ def build_dictionary_single():
     level = request.form.get("level", "z1").strip()
     
     print(f"[APP DEBUG] Single word request: {word}")
-    print(f"[APP DEBUG] Database backend: {'PostgreSQL' if POSTGRES_CONN else 'SQLite'}")
     
     if not word:
         flash("Please enter a word", "error")
@@ -659,7 +652,6 @@ def build_assets():
         flash(f"Assets build started{limit_msg} (task id: {task.id})", "info")
         return redirect(url_for("task_status", task_id=task.id))
     
-    backend = "PostgreSQL"
     return render_template(
         "build_assets.html",
         tts_models=TTS_MODELS,
@@ -667,7 +659,6 @@ def build_assets():
         image_models=IMAGE_MODELS,
         image_sizes=IMAGE_SIZES,
         outdir=ASSET_DIR,
-        backend=backend
     )
 
 @app.route("/build_package", methods=["GET", "POST"])
@@ -695,8 +686,7 @@ def build_package():
         flash(f"Packaging started (task id: {task.id})", "info")
         return redirect(url_for("build_package"))
     
-    backend = "PostgreSQL (will convert to SQLite for packaging)" if POSTGRES_CONN else "SQLite"
-    return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR, backend=backend)
+    return render_template("build_package.html", package_dir=PACKAGE_DIR, asset_dir=ASSET_DIR)
 
 @app.route("/build_package_db_only", methods=["POST"])
 def build_package_db_only():
@@ -951,9 +941,7 @@ def database_management():
     """Unified database management page with init/stats/status/reset."""
     from libs.dictionary import Dictionary
     
-    # Determine backend type
-    backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
-    connection_string = POSTGRES_CONN if POSTGRES_CONN else DICT_PATH
+    connection_string = POSTGRES_CONN
     
     # Handle different actions (accept from querystring or form)
     action = request.values.get("action", "status")
@@ -963,7 +951,6 @@ def database_management():
     
     # Initialize response data
     response_data = {
-        "backend": backend,
         "connection": connection_string,
         "status": {},
         "stats": {},
@@ -1049,71 +1036,32 @@ def database_management():
     
     # Check database status
     try:
-        if backend == "PostgreSQL":
-            # Check PostgreSQL connection
-            from libs.pg_dictionary import PostgresDictionary
-            try:
-                db = PostgresDictionary(POSTGRES_CONN)
-                # Try to get a count to verify tables exist
-                word_count = db.get_word_count()
+        # Check PostgreSQL connection
+        from libs.pg_dictionary import PostgresDictionary
+        try:
+            db = PostgresDictionary(POSTGRES_CONN)
+            # Try to get a count to verify tables exist
+            word_count = db.get_word_count()
+            response_data["status"] = {
+                "connected": True,
+                "tables_exist": True,
+                "message": "PostgreSQL connected and tables exist"
+            }
+            response_data["tables_exist"] = True
+        except Exception as e:
+            if "does not exist" in str(e).lower() or "relation" in str(e).lower():
                 response_data["status"] = {
                     "connected": True,
-                    "tables_exist": True,
-                    "message": "PostgreSQL connected and tables exist"
+                    "tables_exist": False,
+                    "message": "PostgreSQL connected but tables need initialization"
                 }
-                response_data["tables_exist"] = True
-            except Exception as e:
-                if "does not exist" in str(e).lower() or "relation" in str(e).lower():
-                    response_data["status"] = {
-                        "connected": True,
-                        "tables_exist": False,
-                        "message": "PostgreSQL connected but tables need initialization"
-                    }
-                else:
-                    response_data["status"] = {
-                        "connected": False,
-                        "tables_exist": False,
-                        "message": f"PostgreSQL connection error: {e}"
-                    }
-        else:
-            # Check SQLite status
-            if Path(DICT_PATH).exists():
-                size = Path(DICT_PATH).stat().st_size
-                if size > 0:
-                    try:
-                        db = Dictionary()
-                        word_count = db.get_word_count()
-                        response_data["status"] = {
-                            "connected": True,
-                            "tables_exist": True,
-                            "message": f"SQLite database exists ({size:,} bytes)",
-                            "size": size,
-                            "path": DICT_PATH
-                        }
-                        response_data["tables_exist"] = True
-                        db.close()
-                    except:
-                        response_data["status"] = {
-                            "connected": True,
-                            "tables_exist": False,
-                            "message": f"SQLite file exists but tables need initialization",
-                            "size": size,
-                            "path": DICT_PATH
-                        }
-                else:
-                    response_data["status"] = {
-                        "connected": False,
-                        "tables_exist": False,
-                        "message": "Empty SQLite file",
-                        "path": DICT_PATH
-                    }
             else:
                 response_data["status"] = {
                     "connected": False,
                     "tables_exist": False,
-                    "message": "SQLite database does not exist",
-                    "path": DICT_PATH
+                    "message": f"PostgreSQL connection error: {e}"
                 }
+
     except Exception as e:
         response_data["status"] = {
             "connected": False,
@@ -2034,8 +1982,7 @@ def api_approve_story():
 @app.route("/migration")
 def migration():
     """Migration tools page for updating word levels."""
-    backend = "PostgreSQL" if POSTGRES_CONN else "SQLite"
-    return render_template("migration.html", backend=backend)
+    return render_template("migration.html")
 
 
 @app.route("/migration/mark_unknown", methods=["POST"])
