@@ -540,6 +540,28 @@ def generate_definition_image_task(
 
 
 @app.task(base=LoggingTask, bind=True)
+def generate_story_audio_task(
+    self,
+    story_uuid: str,
+    db_path: str,
+    output_dir: str,
+    audio_model: str = "comfy-tts",
+    audio_voice: str = "alloy"
+) -> Dict:
+    """Generate audio for all paragraphs of a story."""
+    logger.info(f"Generating story audio: {story_uuid}")
+    
+    from libs import asset_ops
+    result = asset_ops.generate_story_audio(
+        story_uuid, db_path, output_dir, audio_model, audio_voice
+    )
+    
+    logger.info(f"Story audio result: {result['status']} (generated={result['generated']}, skipped={result['skipped']}, errors={result['errors']})")
+    return result
+
+
+#possibly deprecated
+@app.task(base=LoggingTask, bind=True)
 def generate_assets_for_word(
     self,
     word: str,
@@ -609,6 +631,7 @@ def generate_all_assets(
     output_dir: str,
     generate_audio: bool = True,
     generate_images: bool = True,
+    generate_story_audio: bool = True,
     audio_model: str = "comfy-tts",
     audio_voice: str = "alloy",
     image_model: str = "gpt-image-1",
@@ -653,6 +676,12 @@ def generate_all_assets(
         if os.path.exists(output_dir):
             existing_files = {f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))}
             logger.info(f"Found {len(existing_files)} existing asset files")
+            # Also scan for story audio files in audio subdirectory if it exists
+            audio_dir = os.path.join(output_dir, "audio")
+            if os.path.exists(audio_dir):
+                for f in os.listdir(audio_dir):
+                    if f.startswith("story_") and os.path.isfile(os.path.join(audio_dir, f)):
+                        existing_files.add(f)
         else:
             logger.info("Output directory does not exist yet, no existing files")
     except Exception as e:
@@ -737,12 +766,57 @@ def generate_all_assets(
     logger.info(f"Asset generation complete: {len(results)} word entries processed")
     logger.info(f"Tasks queued: {tasks_queued}, Tasks skipped (existing): {tasks_skipped}")
     
+    # Generate story audio if enabled
+    story_tasks_queued = 0
+    story_tasks_skipped = 0
+    
+    if generate_story_audio:
+        logger.info("Starting story audio generation...")
+        db = PostgresDictionary(db_path)
+        stories = db.get_all_stories()
+        db.close()
+        
+        logger.info(f"Found {len(stories)} stories to process")
+        
+        for story in stories:
+            # Get paragraph count
+            db = PostgresDictionary(db_path)
+            paragraphs = db.get_story_paragraphs(story.uuid)
+            db.close()
+            
+            # Skip stories with no paragraphs
+            if not paragraphs:
+                logger.info(f"Skipping story {story.uuid} ({story.title}): no paragraphs")
+                continue
+            
+            # Check if any audio files are missing
+            missing_files = []
+            for paragraph in paragraphs:
+                audio_file = f"story_{story.uuid}_{paragraph.paragraph_index}.aac"
+                if audio_file not in existing_files:
+                    missing_files.append(audio_file)
+            
+            # Queue task only if there are missing files
+            if missing_files:
+                logger.info(f"Queueing story audio task for {story.uuid} ({story.title}): {len(missing_files)} missing files")
+                story_task = generate_story_audio_task.delay(
+                    story.uuid, db_path, os.path.join(output_dir, "audio"), audio_model, audio_voice
+                )
+                story_tasks_queued += 1
+            else:
+                logger.info(f"Skipping story {story.uuid} ({story.title}): all {len(paragraphs)} audio files exist")
+                story_tasks_skipped += 1
+        
+        logger.info(f"Story audio generation: {story_tasks_queued} tasks queued, {story_tasks_skipped} tasks skipped")
+    
     return {
         "status": "success",
         "words_processed": len(words),
         "entries_processed": len(results),
         "tasks_queued": tasks_queued,
         "tasks_skipped": tasks_skipped,
+        "story_tasks_queued": story_tasks_queued,
+        "story_tasks_skipped": story_tasks_skipped,
         "output_dir": output_dir
     }
 
@@ -1893,3 +1967,6 @@ def rename_image_variant(self, asset_dir: str, uuid: str, def_id: int) -> Dict:
 
 # Expose celery app for CLI
 celery_app = app
+
+# Import automod tasks for Celery worker discovery
+from scripts import automod

@@ -88,6 +88,107 @@ def generate_word_audio(
             return {"status": "error", "file": fname, "error": str(ee)}
 
 
+def generate_story_audio(
+    uuid: str,
+    db_path: str,
+    output_dir: str,
+    audio_model: str = "comfy-tts",
+    audio_voice: str = "alloy",
+    api_key: Optional[str] = None
+) -> Dict[str, int]:
+    """
+    Generate audio files for all paragraphs of a story.
+    
+    Args:
+        uuid: Story UUID
+        db_path: Database path (for PostgreSQL connection)
+        output_dir: Output directory path
+        audio_model: OpenAI TTS model
+        audio_voice: Voice name
+        api_key: OpenAI API key
+        
+    Returns:
+        Dict with 'status', 'generated', 'skipped', and 'errors' keys
+    """
+    from .pg_dictionary import PostgresDictionary
+    
+    logger.info(f"Generating story audio for UUID: {uuid}")
+    
+    # Get story paragraphs from database
+    db = PostgresDictionary(db_path)
+    paragraphs = db.get_story_paragraphs(uuid)
+    db.close()
+    
+    if not paragraphs:
+        logger.info(f"No paragraphs found for story {uuid}")
+        return {"status": "success", "generated": 0, "skipped": 0, "errors": 0}
+    
+    logger.info(f"Processing {len(paragraphs)} paragraphs for story {uuid}")
+    
+    generated = 0
+    skipped = 0
+    errors = 0
+    
+    client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY")) if audio_model != "comfy-tts" else None
+    
+    for paragraph in paragraphs:
+        fname = os.path.join(output_dir, f"story_{uuid}_{paragraph.paragraph_index}.{audio_format}")
+        
+        if os.path.isfile(fname):
+            logger.info(f"Skipping existing file: {fname}")
+            skipped += 1
+            continue
+        
+        text = strip_tags(paragraph.content)
+        if len(text) < 1:
+            logger.warning(f"Text too short for audio: {fname}")
+            skipped += 1
+            continue
+        
+        logger.info(f"Generating audio for {fname}: '{text[:50]}...'")
+        
+        # Special-case: send to ComfyUI server for the 'comfy-tts' model
+        if audio_model == "comfy-tts":
+            try:
+                from .comfy import generate_audio_via_comfy
+                safe_text = text.replace('"', '\\"').replace("\n", " ").replace("'", "\\'")
+                result = generate_audio_via_comfy(word="", text=safe_text, output_path=fname)
+                if result["status"] == "success":
+                    generated += 1
+                elif result["status"] == "error":
+                    errors += 1
+                else:
+                    skipped += 1
+                continue
+            except Exception as e:
+                logger.exception("comfy-tts helper failed: %s", e)
+                errors += 1
+                continue
+        
+        # OpenAI API path
+        try:
+            call_openai_audio_streaming(client, audio_model, audio_voice, text, fname)
+            logger.info(f"Successfully created: {fname}")
+            generated += 1
+        except BadRequestError as bre:
+            log_400_error(bre, text, f"story audio (model={audio_model}, voice={audio_voice})")
+            logger.error(f"400 error for {fname}: {bre}")
+            errors += 1
+        except Exception as e:
+            try:
+                audio_bytes = call_openai_audio_non_streaming(client, audio_model, audio_voice, text)
+                with open(fname, "wb") as f:
+                    f.write(audio_bytes)
+                logger.info(f"Successfully created (fallback): {fname}")
+                generated += 1
+            except Exception as ee:
+                logger.error(f"Error generating audio for {fname}: {ee}")
+                errors += 1
+    
+    logger.info(f"Story audio generation complete: {generated} generated, {skipped} skipped, {errors} errors")
+    return {"status": "success", "generated": generated, "skipped": skipped, "errors": errors}
+
+
 def generate_definition_audio(
     definition: str,
     uuid: str,

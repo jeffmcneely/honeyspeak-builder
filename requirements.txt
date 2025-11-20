@@ -33,3 +33,11 @@ tenacity>=8.2.0
 
 # PostgreSQL support
 psycopg2-binary>=2.9.0
+
+# WebSocket support for real-time updates
+flask-socketio==5.3.4
+simple-websocket>=1.0.0
+gevent>=23.9.0
+gunicorn>=21.2.0
+
+gevent-websocket>=0.10.1  # Add this for explicit WebSocket support with gevent

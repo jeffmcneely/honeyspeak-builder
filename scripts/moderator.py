@@ -460,6 +460,32 @@ def clean_packages_endpoint():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@moderator_bp.route("/api/automod/start", methods=["POST"])
+def automod_start_endpoint():
+    """Trigger automated image moderation task."""
+    try:
+        from flask import request
+        from scripts.automod import moderate_all_images
+        
+        # Get max_images from request body
+        data = request.get_json() or {}
+        max_images = int(data.get("max_images", 0))
+        
+        print(f"[moderator] Starting automoderator with max_images={max_images}")
+        
+        # Queue the task
+        task = moderate_all_images.delay(max_images)
+        
+        return jsonify({
+            "ok": True,
+            "task_id": task.id,
+            "message": f"Automoderator started with max_images={max_images}"
+        })
+    except Exception as e:
+        print(f"[moderator] Error starting automoderator: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @moderator_bp.route("/asset/<path:filename>", methods=["GET"])  # serve images from ASSET_DIRECTORY
 def serve_asset(filename: str):
     # Extract just the filename from the path for validation

@@ -57,7 +57,20 @@ POSTGRES_SCHEMA = [
         FOREIGN KEY(word_uuid) REFERENCES words(uuid) ON DELETE CASCADE
         )""",
     """CREATE INDEX IF NOT EXISTS idx_story_words_uuid ON story_words(story_uuid)""",
-    """CREATE INDEX IF NOT EXISTS idx_story_words_word_uuid ON story_words(word_uuid)"""
+    """CREATE INDEX IF NOT EXISTS idx_story_words_word_uuid ON story_words(word_uuid)""",
+    # moderation_results: stores automated image moderation results
+    """CREATE TABLE IF NOT EXISTS moderation_results (
+        word_uuid TEXT NOT NULL,
+        sid INTEGER NOT NULL,
+        variant INTEGER NOT NULL,
+        represents_word_def BOOLEAN,
+        has_multiple_objects BOOLEAN,
+        is_offensive BOOLEAN,
+        analyzed_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (word_uuid, sid, variant),
+        FOREIGN KEY (word_uuid) REFERENCES words(uuid) ON DELETE CASCADE
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_moderation_analyzed ON moderation_results(analyzed_at DESC)"""
 ]
 
 # Reuse dataclasses from sqlite_dictionary
@@ -677,6 +690,107 @@ class PostgresDictionary:
                 return True
         finally:
             conn.close()
+    
+    def upsert_moderation_result(
+        self, 
+        word_uuid: str, 
+        sid: int, 
+        variant: int,
+        represents: Optional[bool] = None,
+        multiple: Optional[bool] = None,
+        offensive: Optional[bool] = None
+    ):
+        """
+        Insert or update moderation result for an image.
+        Uses COALESCE to preserve existing non-null values when updating.
+        
+        Args:
+            word_uuid: Word UUID
+            sid: Short definition ID
+            variant: Image variant (0, 1, etc.)
+            represents: Does image represent the word/definition?
+            multiple: Does image have multiple objects?
+            offensive: Is image offensive?
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO moderation_results 
+                       (word_uuid, sid, variant, represents_word_def, has_multiple_objects, is_offensive, analyzed_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                       ON CONFLICT (word_uuid, sid, variant) 
+                       DO UPDATE SET 
+                           represents_word_def = COALESCE(%s, moderation_results.represents_word_def),
+                           has_multiple_objects = COALESCE(%s, moderation_results.has_multiple_objects),
+                           is_offensive = COALESCE(%s, moderation_results.is_offensive),
+                           analyzed_at = NOW()""",
+                    (word_uuid, sid, variant, represents, multiple, offensive, 
+                     represents, multiple, offensive)
+                )
+                conn.commit()
+        except Exception as e:
+            self.logger.error(f"[upsert_moderation_result] Exception: {e}")
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    
+    def get_recent_moderation_results(self, limit: int = 100) -> List[dict]:
+        """
+        Get recent moderation results with word and definition info.
+        
+        Args:
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of dicts with filename, word, definition, and moderation results
+        """
+        rows = self.execute_fetchall(
+            """SELECT 
+                   mr.word_uuid,
+                   mr.sid,
+                   mr.variant,
+                   mr.represents_word_def,
+                   mr.has_multiple_objects,
+                   mr.is_offensive,
+                   mr.analyzed_at,
+                   w.word,
+                   w.functional_label,
+                   sd.definition
+               FROM moderation_results mr
+               LEFT JOIN words w ON mr.word_uuid = w.uuid
+               LEFT JOIN shortdef sd ON mr.word_uuid = sd.uuid AND mr.sid = sd.id
+               ORDER BY mr.analyzed_at DESC
+               LIMIT %s""",
+            (limit,)
+        )
+        
+        results = []
+        for row in rows:
+            # Reconstruct filename from components with subdirectory
+            # Assume .png extension since we don't store it
+            filename = f"image/image_{row['word_uuid']}_{row['sid']}_{row['variant']}.png"
+            results.append({
+                'filename': filename,
+                'uuid': row['word_uuid'],
+                'sid': row['sid'],
+                'variant': row['variant'],
+                'word': row['word'],
+                'functional_label': row['functional_label'],
+                'definition': row['definition'],
+                'represents_word_def': row['represents_word_def'],
+                'has_multiple_objects': row['has_multiple_objects'],
+                'is_offensive': row['is_offensive'],
+                'analyzed_at': row['analyzed_at'].isoformat() if row['analyzed_at'] else None
+            })
+        
+        return results
+    
+    def count_moderated_images(self) -> int:
+        """Count total number of moderated images."""
+        row = self.execute_fetchone("SELECT COUNT(*) as count FROM moderation_results")
+        return row['count'] if row else 0
     
     def vacuum(self):
         """PostgreSQL doesn't need explicit VACUUM in normal operation."""

@@ -66,6 +66,22 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+# Register automod blueprint with SocketIO
+try:
+    from automod import automod_bp, socketio, start_redis_listener  # type: ignore
+    socketio.init_app(app, cors_allowed_origins="*", async_mode='gevent')
+    app.register_blueprint(automod_bp, url_prefix="/automod")
+    print("[APP DEBUG] Automod blueprint registered at /automod with SocketIO")
+    
+    # Start Redis listener for WebSocket updates
+    start_redis_listener()
+    print("[APP DEBUG] Redis listener started for automod WebSocket updates")
+except Exception as e:
+    print(f"[APP DEBUG] Could not register automod blueprint: {e}")
+    import traceback
+    traceback.print_exc()
+    socketio = None
+
 # Jinja2 custom filters
 @app.template_filter('filesizeformat')
 def filesizeformat(num):
@@ -2092,5 +2108,20 @@ def migration_update_levels():
 # For Celery CLI discovery
 celery_app = celery
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5002")), debug=True)
+# if __name__ == "__main__":
+#     # Use socketio.run() if available, otherwise fall back to app.run()
+#     try:
+#         from automod import socketio  # type: ignore
+#         if socketio:
+#             print("[APP DEBUG] Starting with SocketIO support")
+#             socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "5002")), debug=True, allow_unsafe_werkzeug=True)
+#         else:
+#             app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5002")), debug=True)
+#     except ImportError:
+#         print("[APP DEBUG] SocketIO not available, using standard Flask server")
+#         app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5002")), debug=True)
+#from flask_socketio import SocketIO
+#socketio = SocketIO(app, cors_allowed_origins="*")
+# ...existing code...
+
+# ...rest of the file...

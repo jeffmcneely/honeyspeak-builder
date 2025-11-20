@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+
+{% block title %}Automod Dashboard - Honeyspeak Builder{% endblock %}
+
+{% block extra_head %}
+<style>
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+  
+  .connection-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  
+  .connection-status.connected {
+    background: #198754;
+    color: white;
+  }
+  
+  .connection-status.disconnected {
+    background: #dc3545;
+    color: white;
+  }
+  
+  .prompt-reference {
+    background: #f8f9fa;
+    border: 2px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+  }
+  
+  .prompt-reference table {
+    margin: 0;
+  }
+  
+  .prompt-reference th {
+    background: #0056b3;
+    color: white;
+    font-weight: bold;
+  }
+  
+  .prompt-reference td {
+    vertical-align: middle;
+  }
+  
+  .desired-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  
+  .desired-true {
+    background: #198754;
+    color: white;
+  }
+  
+  .desired-false {
+    background: #dc3545;
+    color: white;
+  }
+  
+  .image-card {
+    border: 2px solid #333;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+  }
+  
+  .image-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+  }
+  
+  .image-card img {
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    margin-bottom: 10px;
+  }
+  
+  .image-card .word-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    background: #0056b3;
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+  
+  .image-card .definition {
+    font-size: 14px;
+    color: #333;
+    margin: 10px 0;
+    line-height: 1.4;
+  }
+  
+  .moderation-results {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+  }
+  
+  .moderation-result {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid #ddd;
+  }
+  
+  .moderation-result .icon {
+    font-size: 16px;
+  }
+  
+  .result-desired {
+    background: #d4edda;
+    border-color: #198754;
+  }
+  
+  .result-undesired {
+    background: #f8d7da;
+    border-color: #dc3545;
+  }
+  
+  .result-pending {
+    background: #e9ecef;
+    border-color: #6c757d;
+  }
+  
+  .image-card .timestamp {
+    font-size: 12px;
+    color: #666;
+    margin-top: 8px;
+  }
+</style>
+
+<!-- Socket.IO Client -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+  <!-- Connection Status -->
+  <div id="connection-status" class="connection-status disconnected">
+    🔴 Disconnected
+  </div>
+
+  <h1>🤖 Automod Dashboard</h1>
+  <p>Real-time image moderation results from automated analysis</p>
+
+  <!-- Prompt Reference Table -->
+  <div class="prompt-reference">
+    <h4 class="mb-3">Validation Prompts & Desired Responses</h4>
+    <table class="table table-bordered table-sm">
+      <thead>
+        <tr>
+          <th style="width: 50px;">#</th>
+          <th>Question</th>
+          <th style="width: 150px;">Desired Answer</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1</strong></td>
+          <td>Does this image represent {word} {definition}?</td>
+          <td><span class="desired-badge desired-true">✅ True</span></td>
+        </tr>
+        <tr>
+          <td><strong>2</strong></td>
+          <td>Does this image have more than 1 {word}?</td>
+          <td><span class="desired-badge desired-false">✅ False</span></td>
+        </tr>
+        <tr>
+          <td><strong>3</strong></td>
+          <td>Is this image offensive?</td>
+          <td><span class="desired-badge desired-false">✅ False</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Image Grid -->
+  <div id="automod-grid" class="row">
+    <!-- Cards will be populated via JavaScript -->
+  </div>
+
+  <!-- Back to Home -->
+  <div class="mt-4 mb-4">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+    <a href="/moderator" class="btn btn-info">Manual Moderator</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // WebSocket connection
+  const socket = io('/automod');
+  let isConnected = false;
+  let imageCards = new Map(); // filename -> card data
+
+  // Connection status handlers
+  socket.on('connect', function() {
+    console.log('[automod] Connected to WebSocket');
+    isConnected = true;
+    updateConnectionStatus(true);
+    fetchCatchup();
+  });
+
+  socket.on('disconnect', function() {
+    console.log('[automod] Disconnected from WebSocket');
+    isConnected = false;
+    updateConnectionStatus(false);
+  });
+
+  // Moderation update handler
+  socket.on('moderation_update', function(data) {
+    console.log('[automod] Received update:', data);
+    updateCard(data);
+  });
+
+  function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('connection-status');
+    if (connected) {
+      statusEl.textContent = '🟢 Connected';
+      statusEl.className = 'connection-status connected';
+    } else {
+      statusEl.textContent = '🔴 Disconnected';
+      statusEl.className = 'connection-status disconnected';
+    }
+  }
+
+  function fetchCatchup() {
+    console.log('[automod] Fetching catchup data...');
+    fetch('/automod/api/status')
+      .then(response => response.json())
+      .then(results => {
+        console.log(`[automod] Received ${results.length} existing results`);
+        results.forEach(updateCard);
+      })
+      .catch(error => {
+        console.error('[automod] Error fetching catchup:', error);
+      });
+  }
+
+  function updateCard(data) {
+    const { filename, uuid, sid, variant, word, functional_label, definition, 
+            represents_word_def, has_multiple_objects, is_offensive, analyzed_at } = data;
+    
+    // Check if card already exists
+    let cardEl = document.getElementById(`card-${filename}`);
+    
+    if (!cardEl) {
+      // Create new card
+      const col = document.createElement('div');
+      col.className = 'col-lg-3 col-md-4 col-sm-6';
+      
+      cardEl = document.createElement('div');
+      cardEl.id = `card-${filename}`;
+      cardEl.className = 'image-card';
+      
+      col.appendChild(cardEl);
+      
+      // Prepend to grid (newest first)
+      const grid = document.getElementById('automod-grid');
+      grid.insertBefore(col, grid.firstChild);
+    }
+    
+    // Store data
+    imageCards.set(filename, data);
+    
+    // Build card HTML
+    const funcLabel = functional_label ? `<span class="word-badge">${escapeHtml(functional_label)}</span>` : '';
+    
+    const cardHTML = `
+      <img src="/moderator/asset/${encodeURIComponent(filename)}" 
+           alt="${escapeHtml(word)}" 
+           onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23ddd%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EImage not found%3C/text%3E%3C/svg%3E'">
+      
+      <div>
+        <strong>${escapeHtml(word)}</strong>${funcLabel}
+      </div>
+      
+      <div class="definition">${escapeHtml(definition || 'No definition')}</div>
+      
+      <div class="moderation-results">
+        ${getModerationIcon(1, represents_word_def, true)}
+        ${getModerationIcon(2, has_multiple_objects, false)}
+        ${getModerationIcon(3, is_offensive, false)}
+      </div>
+      
+      <div class="timestamp">
+        <small>${analyzed_at ? formatTimestamp(analyzed_at) : 'Processing...'}</small>
+      </div>
+    `;
+    
+    cardEl.innerHTML = cardHTML;
+  }
+
+  function getModerationIcon(promptNum, value, desiredValue) {
+    if (value === null || value === undefined) {
+      // Pending
+      return `<div class="moderation-result result-pending">
+        <span class="icon">⏳</span>
+        <span>Q${promptNum}: Pending</span>
+      </div>`;
+    }
+    
+    const isDesired = (value === desiredValue);
+    const icon = isDesired ? '✅' : '❌';
+    const cssClass = isDesired ? 'result-desired' : 'result-undesired';
+    const valueText = value ? 'True' : 'False';
+    
+    return `<div class="moderation-result ${cssClass}">
+      <span class="icon">${icon}</span>
+      <span>Q${promptNum}: ${valueText}</span>
+    </div>`;
+  }
+
+  function formatTimestamp(isoString) {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleString();
+    } catch (e) {
+      return isoString;
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+
+  // Initial load on page ready
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log('[automod] Page loaded, waiting for WebSocket connection...');
+  });
+</script>
+{% endblock %}

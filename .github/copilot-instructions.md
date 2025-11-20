@@ -155,3 +155,5 @@ See `DEPRECATED_SCRIPTS.md` for detailed migration guide.
 - When editing a HTML page add ID attributes to most elements for easier automated testing.
 - Web pages should use AJAX for any task that is expected to take more than a second.
 - Web pages should return status inline rather than with flash messages for better UX.
+- Web pages should never have pop-up dialogs.
+- Web pages should not use modal dialogs except for image previews.

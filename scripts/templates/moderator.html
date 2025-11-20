@@ -177,6 +177,12 @@
 {% block content %}
   <div class="container-fluid mt-3">
     <h1>Moderator</h1>
+    
+    <!-- Automoderator Button -->
+    <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#automodModal">
+      🤖 Start Automoderator
+    </button>
+    
     <p>Review generated definition images and remove any that are inappropriate or incorrect. Click an image to expand/collapse.</p>
 
     <div class="letter-filter">
@@ -186,6 +192,9 @@
         <button class="btn btn-sm btn-outline-info ms-2" onclick="refreshCache()" title="Rescan asset directory and refresh cache">
           🔄 Refresh Cache
         </button>
+        <a href="/automod" class="btn btn-sm btn-info ms-2" title="View automated moderation dashboard">
+          📊 Automod Dashboard
+        </a>
         <span class="ms-4"><strong>Function label:</strong></span>
         <div id="function-label-buttons" class="ms-2 btn-group" role="group">
           <button class="btn btn-sm btn-outline-success" onclick="filterByFunctionLabel('noun', event)">Noun</button>
@@ -247,6 +256,37 @@
 
     <div id="definitions-list" class="list-group" style="display: none;">
       <!-- Definitions will be populated via AJAX -->
+    </div>
+
+    <!-- Automoderator Modal -->
+    <div class="modal fade" id="automodModal" tabindex="-1" aria-labelledby="automodModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="automodModalLabel">🤖 Start Automoderator</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="automod-form">
+              <div class="mb-3">
+                <label for="automod-max-images" class="form-label">Maximum images to process</label>
+                <input type="number" class="form-control" id="automod-max-images" value="0" min="0" placeholder="0">
+                <div class="form-text">0 = no limit (process all unmoderated images)</div>
+              </div>
+              <div class="mb-3">
+                <label for="automod-model" class="form-label">Vision Model</label>
+                <select class="form-select" id="automod-model" disabled>
+                  <option value="qwen3-vl:4b" selected>qwen3-vl:4b</option>
+                </select>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="startAutomod()">Start Moderation</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -536,6 +576,35 @@
       
       // Don't load definitions on page load - wait for letter selection
       // document.addEventListener('DOMContentLoaded', loadDefinitions);
+      
+      // Automoderator functions
+      async function startAutomod() {
+        const maxImages = parseInt(document.getElementById('automod-max-images').value) || 0;
+        const modal = bootstrap.Modal.getInstance(document.getElementById('automodModal'));
+        
+        try {
+          const response = await fetch('/moderator/api/automod/start', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ max_images: maxImages })
+          });
+          
+          const data = await response.json();
+          
+          if (data.ok) {
+            modal.hide();
+            // Redirect to automod dashboard
+            window.location.href = '/automod';
+          } else {
+            alert('Failed to start automoderator: ' + (data.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error starting automoderator:', error);
+          alert('Error starting automoderator: ' + error.message);
+        }
+      }
     </script>
   </div>
 {% endblock %}

@@ -23,7 +23,7 @@ COPY scripts/ ./scripts/
 RUN mkdir -p /app/logs /data/honeyspeak/assets_hires /data/honeyspeak/assets
 
 # Set Python path to find libs module
-ENV PYTHONPATH=/app/scripts:$PYTHONPATH
+ENV PYTHONPATH=/app/scripts:/app
 
 # Set default storage paths
 ENV STORAGE_HOME=/data
@@ -33,4 +33,5 @@ ENV STORAGE_DIRECTORY=/data/honeyspeak
 EXPOSE 5002
 
 # Entrypoint
-CMD ["python", "scripts/app.py"]
+#CMD ["python", "scripts/app.py"]
+CMD ["gunicorn", "-k", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "-w", "1", "-b", "0.0.0.0:5002", "scripts.app:app"]
