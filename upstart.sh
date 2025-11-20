@@ -173,7 +173,7 @@ build_image() {
 
     print_step $TOTAL_STEPS "Building Multi-Architecture Container Image"
     print_info "Image: $IMAGE_NAME:$TAG"
-    print_info "Platforms: linux/amd64, linux/arm64"
+    print_info "Platforms: linux/amd64"
     print_info "Builder: $BUILDER_NAME"
     echo ""
     
@@ -181,7 +181,7 @@ build_image() {
     BUILD_LOG="/tmp/honeyspeak-build-$$.log"
     echo -n "  Building image... "
     
-    if docker buildx build --platform linux/amd64,linux/arm64 \
+    if docker buildx build --platform linux/amd64 \
       -t $IMAGE_NAME:$TAG \
       --push \
       -f Dockerfile \
