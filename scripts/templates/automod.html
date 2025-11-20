@@ -317,6 +317,12 @@
       <div class="timestamp">
         <small>${analyzed_at ? formatTimestamp(analyzed_at) : 'Processing...'}</small>
       </div>
+      
+      <div class="mt-2">
+        <button class="btn btn-danger btn-sm" onclick="deleteImage('${filename}')">
+          🗑️ Delete Image
+        </button>
+      </div>
     `;
     
     cardEl.innerHTML = cardHTML;
@@ -355,6 +361,29 @@
     const div = document.createElement('div');
     div.textContent = text || '';
     return div.innerHTML;
+  }
+
+  function deleteImage(filename) {
+    fetch(`/moderator/asset/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.ok) {
+        // Remove the card from the DOM
+        const cardEl = document.getElementById(`card-${filename}`);
+        if (cardEl) {
+          cardEl.parentElement.remove();
+        }
+        console.log(`[automod] Deleted ${filename}`);
+      } else {
+        alert(`Failed to delete image: ${data.error || 'Unknown error'}`);
+      }
+    })
+    .catch(error => {
+      console.error('[automod] Delete error:', error);
+      alert('Failed to delete image');
+    });
   }
 
   // Initial load on page ready
