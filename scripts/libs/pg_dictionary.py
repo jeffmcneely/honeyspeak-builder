@@ -66,6 +66,7 @@ POSTGRES_SCHEMA = [
         represents_word_def BOOLEAN,
         has_multiple_objects BOOLEAN,
         is_offensive BOOLEAN,
+        looks_like_aircraft_carrier BOOLEAN,
         analyzed_at TIMESTAMP DEFAULT NOW(),
         PRIMARY KEY (word_uuid, sid, variant),
         FOREIGN KEY (word_uuid) REFERENCES words(uuid) ON DELETE CASCADE
@@ -110,6 +111,8 @@ class PostgresDictionary:
             with conn.cursor() as cursor:
                 for stmt in POSTGRES_SCHEMA:
                     cursor.execute(stmt)
+                # Add new columns to existing tables if needed
+                cursor.execute("ALTER TABLE moderation_results ADD COLUMN IF NOT EXISTS looks_like_aircraft_carrier BOOLEAN")
                 conn.commit()
         finally:
             conn.close()
@@ -698,7 +701,8 @@ class PostgresDictionary:
         variant: int,
         represents: Optional[bool] = None,
         multiple: Optional[bool] = None,
-        offensive: Optional[bool] = None
+        offensive: Optional[bool] = None,
+        aircraft_carrier: Optional[bool] = None
     ):
         """
         Insert or update moderation result for an image.
@@ -711,22 +715,24 @@ class PostgresDictionary:
             represents: Does image represent the word/definition?
             multiple: Does image have multiple objects?
             offensive: Is image offensive?
+            aircraft_carrier: Does this look like an aircraft carrier?
         """
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO moderation_results 
-                       (word_uuid, sid, variant, represents_word_def, has_multiple_objects, is_offensive, analyzed_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                       (word_uuid, sid, variant, represents_word_def, has_multiple_objects, is_offensive, looks_like_aircraft_carrier, analyzed_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
                        ON CONFLICT (word_uuid, sid, variant) 
                        DO UPDATE SET 
                            represents_word_def = COALESCE(%s, moderation_results.represents_word_def),
                            has_multiple_objects = COALESCE(%s, moderation_results.has_multiple_objects),
                            is_offensive = COALESCE(%s, moderation_results.is_offensive),
+                           looks_like_aircraft_carrier = COALESCE(%s, moderation_results.looks_like_aircraft_carrier),
                            analyzed_at = NOW()""",
-                    (word_uuid, sid, variant, represents, multiple, offensive, 
-                     represents, multiple, offensive)
+                    (word_uuid, sid, variant, represents, multiple, offensive, aircraft_carrier,
+                     represents, multiple, offensive, aircraft_carrier)
                 )
                 conn.commit()
         except Exception as e:
@@ -754,6 +760,7 @@ class PostgresDictionary:
                    mr.represents_word_def,
                    mr.has_multiple_objects,
                    mr.is_offensive,
+                   mr.looks_like_aircraft_carrier,
                    mr.analyzed_at,
                    w.word,
                    w.functional_label,
@@ -782,6 +789,7 @@ class PostgresDictionary:
                 'represents_word_def': row['represents_word_def'],
                 'has_multiple_objects': row['has_multiple_objects'],
                 'is_offensive': row['is_offensive'],
+                'looks_like_aircraft_carrier': row['looks_like_aircraft_carrier'],
                 'analyzed_at': row['analyzed_at'].isoformat() if row['analyzed_at'] else None
             })
         

@@ -275,7 +275,7 @@ def scan_image_files(asset_dir: str) -> Set[str]:
 def emit_moderation_update(filename: str, word_uuid: str, sid: int, variant: int,
                            word: str, functional_label: str, definition: str,
                            represents: Optional[bool], multiple: Optional[bool],
-                           offensive: Optional[bool]):
+                           offensive: Optional[bool], aircraft_carrier: Optional[bool]):
     """
     Emit WebSocket update for moderation result via Redis pub/sub.
     This is called from Celery tasks, which run in separate processes.
@@ -291,6 +291,7 @@ def emit_moderation_update(filename: str, word_uuid: str, sid: int, variant: int
         represents: Does image represent the word/definition?
         multiple: Does image have multiple objects?
         offensive: Is image offensive?
+        aircraft_carrier: Does this look like an aircraft carrier?
     """
     try:
         import json
@@ -313,6 +314,7 @@ def emit_moderation_update(filename: str, word_uuid: str, sid: int, variant: int
             'represents_word_def': represents,
             'has_multiple_objects': multiple,
             'is_offensive': offensive,
+            'looks_like_aircraft_carrier': aircraft_carrier,
             'analyzed_at': datetime.now().isoformat()
         }
         
@@ -450,6 +452,14 @@ def automod_image(filename: str):
         
         db.upsert_moderation_result(word_uuid, sid, variant, offensive=offensive)
         
+        # Prompt 4: Does this look like an aircraft carrier? (desired: false)
+        prompt4 = f"Does this look like an aircraft carrier? Answer true or false"
+        logger.info(f"[automod_image] Prompt 4: {prompt4}")
+        aircraft_carrier = call_ollama_vision(image_b64, prompt4)
+        logger.info(f"[automod_image] Prompt 4 result: {aircraft_carrier}")
+        
+        db.upsert_moderation_result(word_uuid, sid, variant, aircraft_carrier=aircraft_carrier)
+        
         logger.info(f"[automod_image] Completed {filename}")
         
         # Emit WebSocket update
@@ -463,7 +473,8 @@ def automod_image(filename: str):
             definition=definition,
             represents=represents,
             multiple=multiple,
-            offensive=offensive
+            offensive=offensive,
+            aircraft_carrier=aircraft_carrier
         )
         
     finally:

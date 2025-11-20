@@ -194,6 +194,11 @@
           <td>Is this image offensive?</td>
           <td><span class="desired-badge desired-false">✅ False</span></td>
         </tr>
+        <tr>
+          <td><strong>4</strong></td>
+          <td>Does this look like an aircraft carrier?</td>
+          <td><span class="desired-badge desired-false">✅ False</span></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -264,7 +269,7 @@
 
   function updateCard(data) {
     const { filename, uuid, sid, variant, word, functional_label, definition, 
-            represents_word_def, has_multiple_objects, is_offensive, analyzed_at } = data;
+            represents_word_def, has_multiple_objects, is_offensive, looks_like_aircraft_carrier, analyzed_at } = data;
     
     // Check if card already exists
     let cardEl = document.getElementById(`card-${filename}`);
@@ -306,6 +311,7 @@
         ${getModerationIcon(1, represents_word_def, true)}
         ${getModerationIcon(2, has_multiple_objects, false)}
         ${getModerationIcon(3, is_offensive, false)}
+        ${getModerationIcon(4, looks_like_aircraft_carrier, false)}
       </div>
       
       <div class="timestamp">
